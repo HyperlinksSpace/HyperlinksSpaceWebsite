@@ -211,10 +211,10 @@ body {
   display: block;
 }
 
-/* Bottom ad overlay: 240px wide, but never more than 77% of viewport width */
+/* Bottom ad overlay: size via vars from layout (SITE_AD_SIZE) */
 .siteAdOverlayWrapper {
   position: fixed;
-  bottom: 20px;
+  bottom: var(--site-ad-bottom, 20px);
   left: 0;
   width: 100%;
   z-index: 2147483647; /* same above-everything layer as logo */
@@ -230,14 +230,18 @@ body {
 }
 
 .siteAdOverlay {
-  width: min(240px, 77vw);
+  width: min(
+    var(--site-ad-max-width, 240px),
+    var(--site-ad-max-vw, 77vw)
+  );
   display: block;
   cursor: pointer;
   pointer-events: auto; /* clickable area */
   animation: adJerk 1.18s ease-in-out infinite;
 }
 
-.siteAdOverlay svg {
+.siteAdOverlay svg,
+.siteAdOverlay img {
   width: 100%;
   height: auto;
   display: block;
