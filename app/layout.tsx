@@ -8,6 +8,7 @@ import { Analytics } from "@vercel/analytics/next";
 import ViewportFix from "./components/ViewportFix";
 import CursorSmudge from "./components/CursorSmudge";
 import BouncingStickers from "./components/BouncingStickers";
+import ExternalLink from "./components/ExternalLink";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -37,6 +38,20 @@ export const viewport: Viewport = {
   userScalable: false,
   viewportFit: "cover",
 };
+
+/** Top logo (HyperlinksSpace): size/position via CSS vars in globals.css */
+const SITE_LOGO_SIZE = {
+  topPx: 20,
+  maxWidthPx: 100,
+  maxViewportWidthPercent: 30,
+} as const;
+
+/** Left-center strategy wordmark (Ctrategy.svg); height tracks logo, slightly smaller */
+const SITE_STRATEGY_SIZE = {
+  /** Visual height vs logo width (wordmark reads lighter than the square mark) */
+  heightScale: 0.92,
+  maxWidthPx: 200,
+} as const;
 
 /** Bottom ad banner: edit these to change size/position (see `.siteAdOverlay*` in globals.css). */
 const SITE_AD_SIZE = {
@@ -76,16 +91,47 @@ export default async function RootLayout({
         <ViewportFix />
         <CursorSmudge />
         {/* Fixed overlay logo, independent from all background scaling */}
-        <div className="siteLogoOverlayWrapper">
+        <div
+          className="siteLogoOverlayWrapper"
+          style={
+            {
+              "--site-logo-top": `${SITE_LOGO_SIZE.topPx}px`,
+              "--site-logo-max-width": `${SITE_LOGO_SIZE.maxWidthPx}px`,
+              "--site-logo-max-vw": `${SITE_LOGO_SIZE.maxViewportWidthPercent}vw`,
+            } as CSSProperties
+          }
+        >
           <Link href="/" aria-label="Reload" className="siteLogoOverlay">
             <img
               src="/hyperlinks/Assets/HyperlinksSpace.svg"
               alt=""
               width={100}
               height={100}
-              style={{ display: "block", width: "100px", height: "100px" }}
             />
           </Link>
+        </div>
+        {/* Left-center strategy wordmark */}
+        <div
+          className="siteStrategyOverlayWrapper"
+          style={
+            {
+              "--site-logo-max-width": `${SITE_LOGO_SIZE.maxWidthPx}px`,
+              "--site-logo-max-vw": `${SITE_LOGO_SIZE.maxViewportWidthPercent}vw`,
+              "--site-strategy-height-scale": `${SITE_STRATEGY_SIZE.heightScale}`,
+              "--site-strategy-max-width": `${SITE_STRATEGY_SIZE.maxWidthPx}px`,
+            } as CSSProperties
+          }
+        >
+          <ExternalLink
+            href="https://ctrategy.hyperlinks.space/"
+            ariaLabel="Open Hyperlinks Space Strategy"
+            className="siteStrategyOverlay"
+          >
+            <img
+              src="/hyperlinks/Assets/Ctrategy.svg"
+              alt=""
+            />
+          </ExternalLink>
         </div>
         {/* Bottom ad: image from public/hyperlinks/Assets/ad.svg */}
         <div

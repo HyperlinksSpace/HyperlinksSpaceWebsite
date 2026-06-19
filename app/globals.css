@@ -181,10 +181,10 @@ body {
   overflow: visible;
 }
 
-/* Fixed overlay logo at top center, exact 100x100 CSS pixels */
+/* Fixed overlay logo at top center; size via vars from layout (SITE_LOGO_SIZE) */
 .siteLogoOverlayWrapper {
   position: fixed;
-  top: 20px;
+  top: var(--site-logo-top, 20px);
   left: 0;
   width: 100%;
   z-index: 2147483647; /* Absolutely above everything */
@@ -194,8 +194,10 @@ body {
 }
 
 .siteLogoOverlay {
-  width: 100px;
-  height: 100px;
+  width: min(
+    var(--site-logo-max-width, 100px),
+    var(--site-logo-max-vw, 30vw)
+  );
   display: block;
   cursor: pointer;
   pointer-events: auto; /* clickable */
@@ -203,12 +205,61 @@ body {
   border: none;
   padding: 0;
   margin: 0;
+  animation: logoFloat 1.18s ease-in-out infinite;
 }
 
-.siteLogoOverlay svg {
+.siteLogoOverlay svg,
+.siteLogoOverlay img {
   width: 100%;
-  height: 100%;
+  height: auto;
   display: block;
+}
+
+/* Left-edge strategy wordmark; width derived from logo size (430×208 SVG) */
+.siteStrategyOverlay {
+  --site-logo-size: min(
+    var(--site-logo-max-width, 100px),
+    var(--site-logo-max-vw, 30vw)
+  );
+  width: min(
+    var(--site-strategy-max-width, 196px),
+    calc(
+      var(--site-logo-size)
+      * var(--site-strategy-height-scale, 0.9)
+      * 430 / 208
+    )
+  );
+  display: block;
+  cursor: pointer;
+  pointer-events: auto;
+  animation: logoFloat 1.18s ease-in-out infinite;
+}
+
+.siteStrategyOverlayWrapper {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100%;
+  height: 100dvh;
+  height: calc(var(--vh, 1vh) * 100);
+  z-index: 2147483647;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  pointer-events: none;
+}
+
+.siteStrategyOverlay svg,
+.siteStrategyOverlay img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+@keyframes logoFloat {
+  0% { transform: translateY(0); }
+  15% { transform: translateY(6px); }
+  100% { transform: translateY(0); }
 }
 
 /* Bottom ad overlay: size via vars from layout (SITE_AD_SIZE) */
