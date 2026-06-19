@@ -9,7 +9,8 @@ const BouncingStickers = dynamic(() => import("./BouncingStickers"), {
 });
 
 export default function DeferredEffects({ links }: { links: string[] }) {
-  const [ready, setReady] = useState(false);
+  const [showStickers, setShowStickers] = useState(false);
+  const [showCursor, setShowCursor] = useState(false);
 
   useEffect(() => {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
@@ -17,37 +18,31 @@ export default function DeferredEffects({ links }: { links: string[] }) {
     }
 
     let cancelled = false;
+    const stickerTimer = window.setTimeout(() => {
+      if (!cancelled) setShowStickers(true);
+    }, 350);
 
-    const mount = () => {
-      if (!cancelled) setReady(true);
+    const enableCursor = () => {
+      if (!cancelled) setShowCursor(true);
     };
 
-    const win = window as Window & {
-      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
-      cancelIdleCallback?: (id: number) => void;
-    };
+    window.addEventListener("pointermove", enableCursor, { once: true, passive: true });
+    window.addEventListener("touchstart", enableCursor, { once: true, passive: true });
+    const cursorTimer = window.setTimeout(enableCursor, 2500);
 
-    if (win.requestIdleCallback) {
-      const id = win.requestIdleCallback(mount, { timeout: 1200 });
-      return () => {
-        cancelled = true;
-        win.cancelIdleCallback?.(id);
-      };
-    }
-
-    const timeoutId = window.setTimeout(mount, 300);
     return () => {
       cancelled = true;
-      window.clearTimeout(timeoutId);
+      window.clearTimeout(stickerTimer);
+      window.clearTimeout(cursorTimer);
+      window.removeEventListener("pointermove", enableCursor);
+      window.removeEventListener("touchstart", enableCursor);
     };
   }, []);
 
-  if (!ready) return null;
-
   return (
     <>
-      <CursorSmudge />
-      <BouncingStickers links={links} />
+      {showStickers ? <BouncingStickers links={links} /> : null}
+      {showCursor ? <CursorSmudge /> : null}
     </>
   );
 }

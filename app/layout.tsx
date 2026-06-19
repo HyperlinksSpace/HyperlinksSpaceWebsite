@@ -82,6 +82,17 @@ export default async function RootLayout({
 
   return (
     <html lang="en">
+      <head>
+        {[1, 2, 3, 4].map((n) => (
+          <link
+            key={n}
+            rel="preload"
+            href={`/hyperlinks/${n}.svg`}
+            as="fetch"
+            crossOrigin="anonymous"
+          />
+        ))}
+      </head>
       <body
         className={`${geistSans.variable} antialiased`}
       >

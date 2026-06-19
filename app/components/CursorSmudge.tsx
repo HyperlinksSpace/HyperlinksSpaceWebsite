@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 
 
 interface Ripple {
@@ -40,23 +40,16 @@ interface Particle {
 export default function CursorSmudge() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameRef = useRef<number | null>(null);
-  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
   const mousePosRef = useRef({ x: 0, y: 0 });
-  const svgContainersCacheRef = useRef<Element[]>([]);
-  const svgContainersCacheAtRef = useRef(0);
   const trailsRef = useRef<TrailPoint[]>([]);
   const lastMousePosRef = useRef({ x: 0, y: 0 });
   const timeRef = useRef(0);
-  const [zoom, setZoom] = useState(1.0);
-  const [currentTime, setCurrentTime] = useState(0);
   const cursorSizeRef = useRef(150);
-  const [blurRegions, setBlurRegions] = useState<Array<{ x: number; y: number; size: number; blur: number; vx: number; vy: number }>>([]);
   const bodyRef = useRef<HTMLBodyElement | null>(null);
   const ripplesRef = useRef<Ripple[]>([]);
   const particlesRef = useRef<Particle[]>([]);
   const isMobileRef = useRef(false);
   const randomMovementRef = useRef<{ x: number; y: number; targetX: number; targetY: number; lastMove: number } | null>(null);
-  const blurRegionsRef = useRef<Array<{ x: number; y: number; size: number; blur: number; vx: number; vy: number }>>([]);
   const lastParticleSpawnRef = useRef(0);
   const lastHiggsSpawnRef = useRef(0);
 
@@ -84,22 +77,8 @@ export default function CursorSmudge() {
         lastMove: Date.now(),
       };
       mousePosRef.current = { x: randomMovementRef.current.x, y: randomMovementRef.current.y };
-      setMousePos({ ...mousePosRef.current });
     }
     
-    // Initialize blur regions - create multiple regions with different blur levels
-    const numRegions = 4;
-    const initialRegions = Array.from({ length: numRegions }, (_, i) => ({
-      x: (window.innerWidth / numRegions) * i + Math.random() * (window.innerWidth / numRegions),
-      y: Math.random() * window.innerHeight,
-      size: 200 + Math.random() * 300,
-      blur: 1 + Math.random() * 8, // Blur between 1-9px
-      vx: (Math.random() - 0.5) * 0.5, // Horizontal velocity
-      vy: (Math.random() - 0.5) * 0.5, // Vertical velocity
-    }));
-    blurRegionsRef.current = initialRegions;
-    setBlurRegions(initialRegions);
-
     // Helper function to calculate cursor size based on orientation
     const updateCursorSize = () => {
       if (typeof window === 'undefined') return;
@@ -165,7 +144,7 @@ export default function CursorSmudge() {
       }
     };
 
-    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mousemove", handleMouseMove, { passive: true });
 
     // Handle click/touch to create water ripples
     const handleClick = (e: MouseEvent | TouchEvent) => {
@@ -193,7 +172,6 @@ export default function CursorSmudge() {
     window.addEventListener("touchstart", handleClick, { passive: true });
 
     // Animation loop
-    let lastUiSync = 0;
     const animate = (timestamp: number) => {
       timeRef.current = timestamp * 0.001;
       const now = Date.now();
@@ -242,152 +220,21 @@ export default function CursorSmudge() {
         }
       }
       
-      const pos = mousePosRef.current;
-      const mouseX = pos.x;
-      const mouseY = pos.y;
+      const mouseX = mousePosRef.current.x;
+      const mouseY = mousePosRef.current.y;
 
-      // Create pulsing zoom effect (gravity lens zooms in and out)
-      const currentZoom = 1.0 + Math.sin(timeRef.current * 1.5) * 0.3;
-      
-      // Animate blur regions - move them around and change blur levels
-      const updatedRegions = blurRegionsRef.current.map((region, index) => {
-        // Update position
-        let newX = region.x + region.vx;
-        let newY = region.y + region.vy;
-        let newVx = region.vx;
-        let newVy = region.vy;
-        
-        // Bounce off edges
-        if (newX < 0 || newX > window.innerWidth) {
-          newVx *= -1;
-          newX = Math.max(0, Math.min(window.innerWidth, newX));
-        }
-        if (newY < 0 || newY > window.innerHeight) {
-          newVy *= -1;
-          newY = Math.max(0, Math.min(window.innerHeight, newY));
-        }
-        
-        // Animate blur level (changes over time)
-        let newBlur = 1 + Math.sin(timeRef.current * 0.8 + index * 0.5) * 4 + Math.cos(timeRef.current * 0.6 + index) * 3;
-        newBlur = Math.max(0.5, Math.min(12, newBlur)); // Clamp between 0.5-12px
-        
-        let newSize = region.size;
-        // Occasionally change size
-        if (Math.random() < 0.01) {
-          newSize = 150 + Math.random() * 400;
-        }
-        
-        // Occasionally reverse direction (creates more chaotic movement)
-        if (Math.random() < 0.005) {
-          newVx = (Math.random() - 0.5) * 0.8;
-          newVy = (Math.random() - 0.5) * 0.8;
-        }
-        
-        return {
-          x: newX,
-          y: newY,
-          size: newSize,
-          blur: newBlur,
-          vx: newVx,
-          vy: newVy,
-        };
-      });
-      
-      blurRegionsRef.current = updatedRegions;
-      
-      // Update and apply water ripples to SVG elements
-      const rippleDuration = 2000; // 2 seconds for longer visibility
+      const rippleDuration = 2000;
       ripplesRef.current = ripplesRef.current.filter((ripple) => {
         const age = now - ripple.startTime;
         if (age > rippleDuration) return false;
-        
-        // Calculate ripple expansion
-        const progress = age / rippleDuration; // 0 to 1
-        ripple.radius = progress * 500; // Max radius 500px for larger circles
-        ripple.intensity = Math.max(0, 1 - progress * 0.8); // Slower fade for better visibility
-        
+
+        const progress = age / rippleDuration;
+        ripple.radius = progress * 500;
+        ripple.intensity = Math.max(0, 1 - progress * 0.8);
+
         return true;
       });
 
-      // Apply gravity lens and water ripple effects to SVG elements
-      if (mouseX > 0 && mouseY > 0) {
-        const lensRadius = 250;
-        const lensRadiusSquared = lensRadius * lensRadius;
-        
-        if (
-          svgContainersCacheRef.current.length === 0 ||
-          timestamp - svgContainersCacheAtRef.current > 3000
-        ) {
-          svgContainersCacheRef.current = Array.from(
-            document.querySelectorAll(".hyperlinksImageContainer"),
-          );
-          svgContainersCacheAtRef.current = timestamp;
-        }
-
-        svgContainersCacheRef.current.forEach((container) => {
-          const rect = container.getBoundingClientRect();
-          const centerX = rect.left + rect.width / 2;
-          const centerY = rect.top + rect.height / 2;
-          
-          let totalDistortionX = 0;
-          let totalDistortionY = 0;
-          let totalScale = 1;
-          
-          // Apply gravity lens effect
-          const dx = mouseX - centerX;
-          const dy = mouseY - centerY;
-          const distanceSquared = dx * dx + dy * dy;
-          
-          if (distanceSquared < lensRadiusSquared) {
-            const distance = Math.sqrt(distanceSquared);
-            const normalizedDistance = distance / lensRadius;
-            const falloff = 1 - normalizedDistance;
-            const localZoom = 1 + (currentZoom - 1) * falloff * 0.8;
-            totalScale = localZoom;
-          }
-          
-          // Apply water ripple effects
-          ripplesRef.current.forEach((ripple) => {
-            const rippleDx = ripple.x - centerX;
-            const rippleDy = ripple.y - centerY;
-            const rippleDistance = Math.sqrt(rippleDx * rippleDx + rippleDy * rippleDy);
-            
-            // Check if this point is within the ripple's influence
-            const rippleInfluenceRadius = ripple.radius + 150; // Extend influence for continuous effect
-            if (rippleDistance < rippleInfluenceRadius && rippleDistance > Math.max(0, ripple.radius - 80)) {
-              // Calculate ripple wave effect - multiple wave frequencies for concentric circles
-              const wavePhase1 = (rippleDistance - ripple.radius) / 40; // Primary wave
-              const wavePhase2 = (rippleDistance - ripple.radius) / 20; // Secondary wave
-              const waveAmplitude1 = Math.sin(wavePhase1 * Math.PI * 2) * ripple.intensity;
-              const waveAmplitude2 = Math.sin(wavePhase2 * Math.PI * 2) * ripple.intensity * 0.5;
-              const waveAmplitude = waveAmplitude1 + waveAmplitude2;
-              
-              // Create distortion that pushes content outward (like water)
-              const angle = Math.atan2(rippleDy, rippleDx);
-              const distortionStrength = waveAmplitude * 40 * ripple.intensity; // Stronger distortion (doubled)
-              
-              totalDistortionX += Math.cos(angle) * distortionStrength;
-              totalDistortionY += Math.sin(angle) * distortionStrength;
-              
-              // Add scale effect from ripple (creates depth)
-              const scaleEffect = 1 + waveAmplitude * 0.15 * ripple.intensity; // Stronger scale effect
-              totalScale *= scaleEffect;
-            }
-          });
-          
-          // Apply combined transform
-          if (totalDistortionX !== 0 || totalDistortionY !== 0 || totalScale !== 1) {
-            (container as HTMLElement).style.transform = 
-              `translate(${totalDistortionX}px, ${totalDistortionY}px) scale(${totalScale})`;
-            (container as HTMLElement).style.transformOrigin = 'center center';
-            (container as HTMLElement).style.transition = 'transform 0.15s ease-out';
-          } else {
-            (container as HTMLElement).style.transform = 'translate(0, 0) scale(1)';
-            (container as HTMLElement).style.transition = 'transform 0.3s ease-out';
-          }
-        });
-      }
-      
       // Clear with slow fade effect (creates smudge trail)
       ctx.fillStyle = "rgba(255, 255, 255, 0.02)";
       ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
@@ -717,7 +564,7 @@ export default function CursorSmudge() {
           ctx.fill();
           
           // Add glow effect for big particles
-          ctx.shadowBlur = size * 1.5;
+          ctx.shadowBlur = size * 0.6;
           ctx.shadowColor = `hsla(${particleHue}, 80%, 70%, ${alpha * 0.5})`;
           ctx.fill();
           ctx.shadowBlur = 0;
@@ -755,7 +602,7 @@ export default function CursorSmudge() {
               ctx.stroke();
               
               // Add stronger glow effect
-              ctx.shadowBlur = 15; // Increased from 10
+              ctx.shadowBlur = 4;
               ctx.shadowColor = `hsla(${hue}, 80%, 65%, ${ringOpacity * 0.7})`; // Stronger shadow
               ctx.stroke();
               ctx.shadowBlur = 0;
@@ -813,14 +660,6 @@ export default function CursorSmudge() {
         }
       }
 
-      if (timestamp - lastUiSync > 80) {
-        lastUiSync = timestamp;
-        setMousePos({ ...mousePosRef.current });
-        setZoom(currentZoom);
-        setCurrentTime(timeRef.current);
-        setBlurRegions([...blurRegionsRef.current]);
-      }
-
       animationFrameRef.current = requestAnimationFrame(animate);
     };
 
@@ -845,130 +684,20 @@ export default function CursorSmudge() {
   }, []);
 
   return (
-    <>
-      {/* Canvas for color smudge effect */}
-      <canvas
-        ref={canvasRef}
-        style={{
-          position: "fixed",
-          top: 0,
-          left: 0,
-          width: "100%",
-          height: "100%",
-          pointerEvents: "none",
-          zIndex: 9999,
-          mixBlendMode: "multiply",
-        }}
-      />
-      {/* Gravity lens effect - pulsing rings that zoom in and out */}
-      {mousePos.x > 0 && mousePos.y > 0 && (
-        <>
-          {/* Gravity lens rings that pulse */}
-          {[0, 1, 2, 3].map((i) => {
-            const ringScale = zoom + i * 0.1;
-            // Calculate cursor size based on orientation
-            const isPortrait = typeof window !== 'undefined' && window.innerHeight > window.innerWidth;
-            const baseCursorSize = isPortrait 
-              ? (typeof window !== 'undefined' ? window.innerWidth / 3 : 150)
-              : (typeof window !== 'undefined' ? window.innerHeight / 3 : 150);
-            const ringRadius = baseCursorSize + i * (baseCursorSize * 0.2);
-            const ringOpacity = (0.3 - i * 0.08) * (1 - Math.abs(zoom - 1.0) * 0.5);
-            
-            return (
-              <div
-                key={i}
-                style={{
-                  position: "fixed",
-                  left: `${mousePos.x}px`,
-                  top: `${mousePos.y}px`,
-                  width: `${ringRadius * 2}px`,
-                  height: `${ringRadius * 2}px`,
-                  marginLeft: `-${ringRadius}px`,
-                  marginTop: `-${ringRadius}px`,
-                  borderRadius: "50%",
-                  border: `2px solid hsla(${60 + Math.sin(currentTime * 0.3 + i) * 80 + i * 10}, 70%, 60%, ${ringOpacity})`,
-                  pointerEvents: "none",
-                  zIndex: 10001,
-                  transform: `scale(${ringScale})`,
-                  transition: "transform 0.1s ease-out, opacity 0.1s ease-out",
-                  boxShadow: `0 0 ${ringRadius * 0.5}px hsla(${60 + Math.sin(currentTime * 0.3 + i) * 80 + i * 10}, 70%, 60%, ${ringOpacity * 0.5})`,
-                }}
-              />
-            );
-          })}
-          
-          {/* Gravity lens overlay - creates localized zoom effect on underlying content */}
-          <div
-            style={{
-              position: "fixed",
-              top: 0,
-              left: 0,
-              width: "100%",
-              height: "100%",
-              pointerEvents: "none",
-              zIndex: 10000,
-              clipPath: `circle(${(typeof window !== 'undefined' ? (window.innerHeight > window.innerWidth ? window.innerWidth / 3 : window.innerHeight / 3) : 200) * zoom}px at ${mousePos.x}px ${mousePos.y}px)`,
-              transform: `scale(${zoom})`,
-              transformOrigin: `${mousePos.x}px ${mousePos.y}px`,
-              transition: "transform 0.1s ease-out, clip-path 0.1s ease-out",
-            }}
-          >
-            {/* This creates the magnifying effect by scaling content within the clip-path */}
-            <div
-              style={{
-                width: "100%",
-                height: "100%",
-                transform: `scale(${1 / zoom})`,
-                transformOrigin: `${mousePos.x}px ${mousePos.y}px`,
-                background: "transparent",
-              }}
-            />
-          </div>
-        </>
-      )}
-      {/* Animated blur regions - create inconsistent blur areas */}
-      {blurRegions.map((region, index) => (
-        <div
-          key={index}
-          style={{
-            position: "fixed",
-            left: `${region.x}px`,
-            top: `${region.y}px`,
-            width: `${region.size}px`,
-            height: `${region.size}px`,
-            marginLeft: `-${region.size / 2}px`,
-            marginTop: `-${region.size / 2}px`,
-            borderRadius: "50%",
-            pointerEvents: "none",
-            zIndex: 9998,
-            backdropFilter: `blur(${region.blur}px)`,
-            WebkitBackdropFilter: `blur(${region.blur}px)`,
-            transition: "backdrop-filter 0.1s linear",
-            mixBlendMode: "normal",
-            opacity: 0.6,
-          }}
-        />
-      ))}
-      {/* Prism overlay that distorts the view */}
-      <div
-        style={{
-          position: "fixed",
-          top: 0,
-          left: 0,
-          width: "100%",
-          height: "100%",
-          pointerEvents: "none",
-          zIndex: 9997,
-          background: `radial-gradient(circle at ${mousePos.x}px ${mousePos.y}px, 
-            rgba(255, 200, 50, 0.1) 0%,
-            rgba(255, 180, 100, 0.08) 25%,
-            rgba(200, 255, 150, 0.06) 50%,
-            rgba(150, 255, 200, 0.04) 75%,
-            transparent 100%)`,
-          mixBlendMode: "overlay",
-        }}
-      />
-    </>
+    <canvas
+      ref={canvasRef}
+      aria-hidden="true"
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        width: "100%",
+        height: "100%",
+        pointerEvents: "none",
+        zIndex: 9999,
+        mixBlendMode: "multiply",
+      }}
+    />
   );
 }
 

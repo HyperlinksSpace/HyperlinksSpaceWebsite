@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 export default function AnimatedGrid({ children }: { children: React.ReactNode }) {
-  const [gridStyle, setGridStyle] = useState<React.CSSProperties>({});
+  const gridRef = useRef<HTMLElement>(null);
   const [cellOrder, setCellOrder] = useState<number[]>([0, 1, 2, 3]);
   const [animationDurations, setAnimationDurations] = useState<string[]>([
     "3s",
@@ -22,8 +22,8 @@ export default function AnimatedGrid({ children }: { children: React.ReactNode }
   };
 
   const generateCompetitiveProportions = () => {
-    const min = 0.2;
-    const max = 1.8;
+    const min = 0.35;
+    const max = 1.65;
     const val1 = Math.random() * (max - min) + min;
     const val2 = 2 - val1;
     const clampedVal2 = Math.max(min, Math.min(max, val2));
@@ -42,17 +42,17 @@ export default function AnimatedGrid({ children }: { children: React.ReactNode }
     let timeoutId: ReturnType<typeof setTimeout>;
 
     const updateGrid = () => {
+      const grid = gridRef.current;
+      if (!grid) return;
       const [col1, col2] = generateCompetitiveProportions();
       const [row1, row2] = generateCompetitiveProportions();
-      setGridStyle({
-        gridTemplateColumns: `${col1}fr ${col2}fr`,
-        gridTemplateRows: `${row1}fr ${row2}fr`,
-      });
+      grid.style.gridTemplateColumns = `${col1}fr ${col2}fr`;
+      grid.style.gridTemplateRows = `${row1}fr ${row2}fr`;
     };
 
     const scheduleNext = () => {
       if (cancelled) return;
-      const delay = Math.random() * 800 + 400;
+      const delay = Math.random() * 1800 + 1800;
       timeoutId = setTimeout(() => {
         if (cancelled) return;
         updateGrid();
@@ -79,7 +79,7 @@ export default function AnimatedGrid({ children }: { children: React.ReactNode }
 
     const scheduleNext = () => {
       if (cancelled) return;
-      const delay = Math.random() * 1500 + 800;
+      const delay = Math.random() * 2200 + 2200;
       timeoutId = setTimeout(() => {
         if (cancelled) return;
         shufflePositions();
@@ -91,7 +91,7 @@ export default function AnimatedGrid({ children }: { children: React.ReactNode }
       if (cancelled) return;
       shufflePositions();
       scheduleNext();
-    }, 500);
+    }, 900);
 
     return () => {
       cancelled = true;
@@ -115,15 +115,11 @@ export default function AnimatedGrid({ children }: { children: React.ReactNode }
         return (
           <div
             key={originalIndex}
+            className="hyperlinksGridCell"
             style={{
               gridRow: row,
               gridColumn: col,
-              transition:
-                "grid-row 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55), grid-column 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55)",
-              animationName: "cellFight",
               animationDuration: animationDurations[originalIndex],
-              animationTimingFunction: "ease-in-out",
-              animationIterationCount: "infinite",
               animationDelay: `${originalIndex * 0.2}s`,
             }}
           >
@@ -135,7 +131,7 @@ export default function AnimatedGrid({ children }: { children: React.ReactNode }
   }, [childrenArray, cellOrder, animationDurations]);
 
   return (
-    <main className="hyperlinksGrid" style={gridStyle}>
+    <main ref={gridRef} className="hyperlinksGrid">
       {orderedChildren}
     </main>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import WaveSVG from "./WaveSVG";
 
 interface AnimatedCellProps {
@@ -10,23 +10,24 @@ interface AnimatedCellProps {
 }
 
 export default function AnimatedCell({ n, href, svgSrc }: AnimatedCellProps) {
-  const svgWrapperRef = useRef<HTMLDivElement>(null);
-  const [aspectRatio, setAspectRatio] = useState({ scaleX: 1, scaleY: 1 });
+  const wrapperRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return;
+
     let cancelled = false;
     let timeoutId: ReturnType<typeof setTimeout>;
 
     const updateAspectRatio = () => {
-      setAspectRatio({
-        scaleX: 0.78 + Math.random() * 0.44,
-        scaleY: 0.78 + Math.random() * 0.44,
-      });
+      const scaleX = 0.82 + Math.random() * 0.36;
+      const scaleY = 0.82 + Math.random() * 0.36;
+      wrapper.style.transform = `translate3d(0,0,0) scale(${scaleX}, ${scaleY})`;
     };
 
     const scheduleNext = () => {
       if (cancelled) return;
-      const delay = Math.random() * 2000 + 1000;
+      const delay = Math.random() * 2500 + 2000;
       timeoutId = setTimeout(() => {
         if (cancelled) return;
         updateAspectRatio();
@@ -53,20 +54,7 @@ export default function AnimatedCell({ n, href, svgSrc }: AnimatedCellProps) {
     >
       <div className="hyperlinksImagePad">
         <div className="hyperlinksImageContainer">
-          <div
-            ref={svgWrapperRef}
-            style={{
-              width: "100%",
-              height: "100%",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              transform: `scale(${aspectRatio.scaleX}, ${aspectRatio.scaleY})`,
-              transition: "transform 0.8s cubic-bezier(0.4, 0, 0.2, 1)",
-              transformOrigin: "center center",
-              willChange: "transform",
-            }}
-          >
+          <div ref={wrapperRef} className="hyperlinksSvgWrapper">
             <WaveSVG svgSrc={svgSrc} />
           </div>
         </div>

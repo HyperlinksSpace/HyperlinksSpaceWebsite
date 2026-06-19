@@ -92,9 +92,90 @@ body {
   box-sizing: border-box;
   overflow: hidden;
   position: relative;
-  /* Faster, more aggressive transitions for competitive effect */
-  transition: grid-template-columns 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55),
-              grid-template-rows 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  contain: layout style;
+  transition:
+    grid-template-columns 0.55s ease,
+    grid-template-rows 0.55s ease;
+}
+
+.hyperlinksGridCell {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+  contain: layout style paint;
+  transform: translateZ(0);
+  will-change: transform;
+  animation-name: cellFight;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  transition: transform 0.3s ease-out;
+}
+
+.hyperlinksSvgWrapper {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform-origin: center center;
+  transition: transform 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: transform;
+}
+
+.hyperlinksWaveHost {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
+}
+
+.hyperlinksWaveSvg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  animation: hyperlinksWaveBody 4.2s ease-in-out infinite;
+  transform-origin: center center;
+  will-change: transform;
+}
+
+.hyperlinksWavePath {
+  animation: hyperlinksWavePath 2.8s ease-in-out infinite;
+  transform-origin: center center;
+  will-change: transform;
+}
+
+@keyframes hyperlinksWaveBody {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  25% {
+    transform: translate3d(2px, -3px, 0) scale(1.012) rotate(0.35deg);
+  }
+  50% {
+    transform: translate3d(-2px, 2px, 0) scale(0.992) rotate(-0.35deg);
+  }
+  75% {
+    transform: translate3d(1px, 3px, 0) scale(1.008);
+  }
+}
+
+@keyframes hyperlinksWavePath {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  33% {
+    transform: translate3d(2px, -2px, 0) scale(1.012);
+  }
+  66% {
+    transform: translate3d(-2px, 2px, 0) scale(0.988);
+  }
 }
 
 /* Animation for cells fighting for space */
@@ -117,19 +198,9 @@ body {
   }
 }
 
-.hyperlinksGrid > div {
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  min-width: 0;
-  min-height: 0;
-  position: relative;
-  /* Add hover effect for more competitive feel */
-  transition: transform 0.3s ease-out;
-}
-
-.hyperlinksGrid > div:hover {
-  transform: scale(1.08);
+.hyperlinksGrid > div:hover,
+.hyperlinksGridCell:hover {
+  transform: scale(1.06) translateZ(0);
   z-index: 10;
 }
 
@@ -355,9 +426,12 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .hyperlinksGrid > div,
+  .hyperlinksGridCell,
   .siteLogoOverlay,
   .siteStrategyOverlay,
-  .siteAdOverlay {
+  .siteAdOverlay,
+  .hyperlinksWaveSvg,
+  .hyperlinksWavePath {
     animation: none !important;
   }
 
@@ -365,7 +439,8 @@ body {
     transition: none !important;
   }
 
-  .hyperlinksGrid > div:hover {
+  .hyperlinksGrid > div:hover,
+  .hyperlinksGridCell:hover {
     transform: none;
   }
 }

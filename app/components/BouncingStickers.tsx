@@ -139,7 +139,15 @@ export default function BouncingStickers({ links }: { links: string[] }) {
       }
     });
 
-    function loop() {
+    let lastFrame = 0;
+
+    function loop(now: number) {
+      if (now - lastFrame < 32) {
+        rafRef.current = requestAnimationFrame(loop);
+        return;
+      }
+      lastFrame = now;
+
       const current = stickersRef.current;
       tickStickers(current, window.innerWidth, window.innerHeight);
 
