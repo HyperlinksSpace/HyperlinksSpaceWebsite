@@ -215,19 +215,11 @@ body {
   display: block;
 }
 
-/* Left-edge strategy wordmark; width derived from logo size (430×208 SVG) */
+/* Left-edge strategy wordmark; same min(px, vw) sizing as `.siteLogoOverlay` */
 .siteStrategyOverlay {
-  --site-logo-size: min(
-    var(--site-logo-max-width, 100px),
-    var(--site-logo-max-vw, 30vw)
-  );
   width: min(
-    var(--site-strategy-max-width, 196px),
-    calc(
-      var(--site-logo-size)
-      * var(--site-strategy-height-scale, 0.9)
-      * 430 / 208
-    )
+    var(--site-strategy-max-width, 440px),
+    var(--site-strategy-max-vw, 52vw)
   );
   display: block;
   cursor: pointer;

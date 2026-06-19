@@ -39,18 +39,20 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
-/** Top logo (HyperlinksSpace): size/position via CSS vars in globals.css */
+/** Top logo (HyperlinksSpace): max px cap + max vw cap (see `.siteLogoOverlay` in globals.css) */
 const SITE_LOGO_SIZE = {
   topPx: 20,
   maxWidthPx: 100,
   maxViewportWidthPercent: 30,
 } as const;
 
-/** Left-center strategy wordmark (Ctrategy.svg); height tracks logo, slightly smaller */
+/**
+ * Ctrategy wordmark: same min(px, vw) pattern as SITE_LOGO_SIZE.
+ * Desktop px cap is set high — thin strokes read smaller than the square logo at equal width.
+ */
 const SITE_STRATEGY_SIZE = {
-  /** Visual height vs logo width (wordmark reads lighter than the square mark) */
-  heightScale: 0.92,
-  maxWidthPx: 200,
+  maxWidthPx: 440,
+  maxViewportWidthPercent: 52,
 } as const;
 
 /** Bottom ad banner: edit these to change size/position (see `.siteAdOverlay*` in globals.css). */
@@ -115,10 +117,8 @@ export default async function RootLayout({
           className="siteStrategyOverlayWrapper"
           style={
             {
-              "--site-logo-max-width": `${SITE_LOGO_SIZE.maxWidthPx}px`,
-              "--site-logo-max-vw": `${SITE_LOGO_SIZE.maxViewportWidthPercent}vw`,
-              "--site-strategy-height-scale": `${SITE_STRATEGY_SIZE.heightScale}`,
               "--site-strategy-max-width": `${SITE_STRATEGY_SIZE.maxWidthPx}px`,
+              "--site-strategy-max-vw": `${SITE_STRATEGY_SIZE.maxViewportWidthPercent}vw`,
             } as CSSProperties
           }
         >
@@ -130,6 +130,8 @@ export default async function RootLayout({
             <img
               src="/hyperlinks/Assets/Ctrategy.svg"
               alt=""
+              width={430}
+              height={208}
             />
           </ExternalLink>
         </div>
