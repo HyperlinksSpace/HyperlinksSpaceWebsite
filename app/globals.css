@@ -205,7 +205,8 @@ body {
   border: none;
   padding: 0;
   margin: 0;
-  animation: logoFloat 1.18s ease-in-out infinite;
+  transform-origin: center center;
+  animation: logoPlay 3s ease-in-out infinite;
 }
 
 .siteLogoOverlay svg,
@@ -252,6 +253,29 @@ body {
   0% { transform: translateY(0); }
   15% { transform: translateY(6px); }
   100% { transform: translateY(0); }
+}
+
+@keyframes logoPlay {
+  0%,
+  55%,
+  100% {
+    transform: rotate(0deg);
+  }
+  10% {
+    transform: rotate(-7deg);
+  }
+  20% {
+    transform: rotate(7deg);
+  }
+  30% {
+    transform: rotate(-5deg);
+  }
+  40% {
+    transform: rotate(5deg);
+  }
+  50% {
+    transform: rotate(-2deg);
+  }
 }
 
 /* Bottom ad overlay: size via vars from layout (SITE_AD_SIZE) */
@@ -327,4 +351,21 @@ body {
 }
 .hyperlinksPos4 {
   object-position: left top;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hyperlinksGrid > div,
+  .siteLogoOverlay,
+  .siteStrategyOverlay,
+  .siteAdOverlay {
+    animation: none !important;
+  }
+
+  .hyperlinksGrid {
+    transition: none !important;
+  }
+
+  .hyperlinksGrid > div:hover {
+    transform: none;
+  }
 }

@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 
 const STICKER_SIZE = 44;
-const SPEED = 3.6; // moderate speed in px per frame
+const SPEED = 3.6;
 
 type StickerData = {
   x: number;
@@ -32,8 +32,12 @@ function initSticker(src: string, w: number, h: number): StickerData {
   };
 }
 
-/** Mirror reflection: reflect velocity across surface normal (like light on a mirror). */
-function reflectVelocity(vx: number, vy: number, nx: number, ny: number): { vx: number; vy: number } {
+function reflectVelocity(
+  vx: number,
+  vy: number,
+  nx: number,
+  ny: number,
+): { vx: number; vy: number } {
   const dot = vx * nx + vy * ny;
   return {
     vx: vx - 2 * dot * nx,
@@ -45,7 +49,6 @@ function tickStickers(stickers: StickerData[], w: number, h: number): void {
   const maxX = w - STICKER_SIZE;
   const maxY = h - STICKER_SIZE;
 
-  // Move and bounce off walls (reflect velocity, clamp position)
   for (const s of stickers) {
     s.x += s.vx;
     s.y += s.vy;
@@ -68,28 +71,18 @@ function tickStickers(stickers: StickerData[], w: number, h: number): void {
     }
   }
 
-  // Sticker–sticker: AABB collision (respects dimensions), mirror reflection on hit
   for (let i = 0; i < stickers.length; i++) {
     for (let j = i + 1; j < stickers.length; j++) {
       const a = stickers[i];
       const b = stickers[j];
 
-      // AABB overlap - rectangles don't overlay
-      const aLeft = a.x;
-      const aRight = a.x + STICKER_SIZE;
-      const aTop = a.y;
-      const aBottom = a.y + STICKER_SIZE;
-      const bLeft = b.x;
-      const bRight = b.x + STICKER_SIZE;
-      const bTop = b.y;
-      const bBottom = b.y + STICKER_SIZE;
-
-      const overlapX = Math.min(aRight, bRight) - Math.max(aLeft, bLeft);
-      const overlapY = Math.min(aBottom, bBottom) - Math.max(aTop, bTop);
+      const overlapX =
+        Math.min(a.x + STICKER_SIZE, b.x + STICKER_SIZE) - Math.max(a.x, b.x);
+      const overlapY =
+        Math.min(a.y + STICKER_SIZE, b.y + STICKER_SIZE) - Math.max(a.y, b.y);
 
       if (overlapX <= 0 || overlapY <= 0) continue;
 
-      // Determine collision normal from smallest overlap axis (surface we hit)
       let nx: number;
       let ny: number;
       let overlap: number;
@@ -103,7 +96,6 @@ function tickStickers(stickers: StickerData[], w: number, h: number): void {
         overlap = overlapY;
       }
 
-      // Mirror reflection: each sticker reflects its velocity across the contact normal (like light on a mirror)
       const aReflected = reflectVelocity(a.vx, a.vy, nx, ny);
       const bReflected = reflectVelocity(b.vx, b.vy, -nx, -ny);
 
@@ -112,7 +104,6 @@ function tickStickers(stickers: StickerData[], w: number, h: number): void {
       b.vx = bReflected.vx;
       b.vy = bReflected.vy;
 
-      // Separate so they never overlay - push apart along normal by overlap amount
       const half = overlap / 2;
       a.x -= nx * half;
       a.y -= ny * half;
@@ -129,34 +120,43 @@ const STICKER_SOURCES = [
 ] as const;
 
 export default function BouncingStickers({ links }: { links: string[] }) {
-  const stickersRef = useRef<StickerData[] | null>(null);
-  const [positions, setPositions] = useState<StickerData[] | null>(null);
+  const stickersRef = useRef<StickerData[]>([]);
+  const stickerElsRef = useRef<(HTMLAnchorElement | null)[]>([]);
   const rafRef = useRef<number>(0);
-  const linksList = links.length >= 5 ? links.slice(0, 5) : [...links, "/"];
+  const linksList =
+    links.length >= 5 ? links.slice(0, 5) : [...links, "/"];
 
-  // Initialize stickers and start animation loop
   useEffect(() => {
-    const w = typeof window !== "undefined" ? window.innerWidth : 400;
-    const h = typeof window !== "undefined" ? window.innerHeight : 400;
-    const stickers = STICKER_SOURCES.map((src) => initSticker(src, w, h));
-    stickersRef.current = stickers;
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    stickersRef.current = STICKER_SOURCES.map((src) => initSticker(src, w, h));
+
+    stickerElsRef.current.forEach((el, i) => {
+      const s = stickersRef.current[i];
+      if (el && s) {
+        el.style.left = `${s.x}px`;
+        el.style.top = `${s.y}px`;
+      }
+    });
 
     function loop() {
       const current = stickersRef.current;
-      if (!current) return;
-      const w = window.innerWidth;
-      const h = window.innerHeight;
-      tickStickers(current, w, h);
-      setPositions(current.map((s) => ({ ...s })));
+      tickStickers(current, window.innerWidth, window.innerHeight);
+
+      stickerElsRef.current.forEach((el, i) => {
+        const s = current[i];
+        if (el && s) {
+          el.style.left = `${s.x}px`;
+          el.style.top = `${s.y}px`;
+        }
+      });
+
       rafRef.current = requestAnimationFrame(loop);
     }
+
     rafRef.current = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(rafRef.current);
   }, []);
-
-  if (!positions || positions.length === 0) {
-    return null;
-  }
 
   return (
     <div
@@ -169,15 +169,18 @@ export default function BouncingStickers({ links }: { links: string[] }) {
         zIndex: 2147483647,
       }}
     >
-      {positions.map((sticker, i) => (
+      {STICKER_SOURCES.map((src, i) => (
         <a
-          key={i}
+          key={src}
+          ref={(el) => {
+            stickerElsRef.current[i] = el;
+          }}
           href="#"
           className="bouncing-sticker"
           style={{
             position: "absolute",
-            left: sticker.x,
-            top: sticker.y,
+            left: 0,
+            top: 0,
             width: STICKER_SIZE,
             height: STICKER_SIZE,
             pointerEvents: "auto",
@@ -186,7 +189,8 @@ export default function BouncingStickers({ links }: { links: string[] }) {
           }}
           onClick={(e) => {
             e.preventDefault();
-            const href = linksList[Math.floor(Math.random() * linksList.length)] ?? "/";
+            const href =
+              linksList[Math.floor(Math.random() * linksList.length)] ?? "/";
             if (href.startsWith("http")) {
               window.open(href, "_blank", "noopener,noreferrer");
             } else {
@@ -195,11 +199,18 @@ export default function BouncingStickers({ links }: { links: string[] }) {
           }}
         >
           <img
-            src={sticker.src}
+            src={src}
             alt=""
             width={STICKER_SIZE}
             height={STICKER_SIZE}
-            style={{ display: "block", width: "100%", height: "100%", pointerEvents: "none" }}
+            loading="lazy"
+            decoding="async"
+            style={{
+              display: "block",
+              width: "100%",
+              height: "100%",
+              pointerEvents: "none",
+            }}
           />
         </a>
       ))}

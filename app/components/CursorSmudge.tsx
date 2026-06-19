@@ -41,6 +41,9 @@ export default function CursorSmudge() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameRef = useRef<number | null>(null);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+  const mousePosRef = useRef({ x: 0, y: 0 });
+  const svgContainersCacheRef = useRef<Element[]>([]);
+  const svgContainersCacheAtRef = useRef(0);
   const trailsRef = useRef<TrailPoint[]>([]);
   const lastMousePosRef = useRef({ x: 0, y: 0 });
   const timeRef = useRef(0);
@@ -80,11 +83,12 @@ export default function CursorSmudge() {
         targetY: window.innerHeight / 2,
         lastMove: Date.now(),
       };
-      setMousePos({ x: randomMovementRef.current.x, y: randomMovementRef.current.y });
+      mousePosRef.current = { x: randomMovementRef.current.x, y: randomMovementRef.current.y };
+      setMousePos({ ...mousePosRef.current });
     }
     
     // Initialize blur regions - create multiple regions with different blur levels
-    const numRegions = 8;
+    const numRegions = 4;
     const initialRegions = Array.from({ length: numRegions }, (_, i) => ({
       x: (window.innerWidth / numRegions) * i + Math.random() * (window.innerWidth / numRegions),
       y: Math.random() * window.innerHeight,
@@ -105,8 +109,12 @@ export default function CursorSmudge() {
 
     // Set canvas size
     const resizeCanvas = () => {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
+      const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+      canvas.width = Math.floor(window.innerWidth * dpr);
+      canvas.height = Math.floor(window.innerHeight * dpr);
+      canvas.style.width = `${window.innerWidth}px`;
+      canvas.style.height = `${window.innerHeight}px`;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       updateCursorSize();
     };
     resizeCanvas();
@@ -121,7 +129,7 @@ export default function CursorSmudge() {
       const vx = e.clientX - lastMousePosRef.current.x;
       const vy = e.clientY - lastMousePosRef.current.y;
       
-      setMousePos({ x: e.clientX, y: e.clientY });
+      mousePosRef.current = { x: e.clientX, y: e.clientY };
       trailsRef.current.push({
         x: e.clientX,
         y: e.clientY,
@@ -185,6 +193,7 @@ export default function CursorSmudge() {
     window.addEventListener("touchstart", handleClick, { passive: true });
 
     // Animation loop
+    let lastUiSync = 0;
     const animate = (timestamp: number) => {
       timeRef.current = timestamp * 0.001;
       const now = Date.now();
@@ -219,26 +228,26 @@ export default function CursorSmudge() {
           randomMovementRef.current.x = startX + (randomMovementRef.current.targetX - startX) * easeProgress;
           randomMovementRef.current.y = startY + (randomMovementRef.current.targetY - startY) * easeProgress;
           
-          setMousePos({ 
-            x: randomMovementRef.current.x, 
-            y: randomMovementRef.current.y 
-          });
+          mousePosRef.current = {
+            x: randomMovementRef.current.x,
+            y: randomMovementRef.current.y,
+          };
         } else {
-          // Reached target, stay there (stopped) until next move interval
           randomMovementRef.current.x = randomMovementRef.current.targetX;
           randomMovementRef.current.y = randomMovementRef.current.targetY;
-          setMousePos({ 
-            x: randomMovementRef.current.x, 
-            y: randomMovementRef.current.y 
-          });
+          mousePosRef.current = {
+            x: randomMovementRef.current.x,
+            y: randomMovementRef.current.y,
+          };
         }
       }
       
+      const pos = mousePosRef.current;
+      const mouseX = pos.x;
+      const mouseY = pos.y;
+
       // Create pulsing zoom effect (gravity lens zooms in and out)
-      // Zoom pulses between 1.0 and 1.6 with smooth sine wave
-      const currentZoom = 1.0 + Math.sin(timeRef.current * 1.5) * 0.3; // 1.0 to 1.3 zoom range
-      setZoom(currentZoom);
-      setCurrentTime(timeRef.current);
+      const currentZoom = 1.0 + Math.sin(timeRef.current * 1.5) * 0.3;
       
       // Animate blur regions - move them around and change blur levels
       const updatedRegions = blurRegionsRef.current.map((region, index) => {
@@ -285,10 +294,6 @@ export default function CursorSmudge() {
       });
       
       blurRegionsRef.current = updatedRegions;
-      // Update state every few frames for performance
-      if (Math.floor(timestamp) % 16 < 8) { // Update roughly every other frame
-        setBlurRegions([...updatedRegions]);
-      }
       
       // Update and apply water ripples to SVG elements
       const rippleDuration = 2000; // 2 seconds for longer visibility
@@ -305,13 +310,21 @@ export default function CursorSmudge() {
       });
 
       // Apply gravity lens and water ripple effects to SVG elements
-      if (mousePos.x > 0 && mousePos.y > 0) {
+      if (mouseX > 0 && mouseY > 0) {
         const lensRadius = 250;
         const lensRadiusSquared = lensRadius * lensRadius;
         
-        // Find all SVG containers and apply effects
-        const svgContainers = document.querySelectorAll('.hyperlinksImageContainer');
-        svgContainers.forEach((container) => {
+        if (
+          svgContainersCacheRef.current.length === 0 ||
+          timestamp - svgContainersCacheAtRef.current > 3000
+        ) {
+          svgContainersCacheRef.current = Array.from(
+            document.querySelectorAll(".hyperlinksImageContainer"),
+          );
+          svgContainersCacheAtRef.current = timestamp;
+        }
+
+        svgContainersCacheRef.current.forEach((container) => {
           const rect = container.getBoundingClientRect();
           const centerX = rect.left + rect.width / 2;
           const centerY = rect.top + rect.height / 2;
@@ -321,8 +334,8 @@ export default function CursorSmudge() {
           let totalScale = 1;
           
           // Apply gravity lens effect
-          const dx = mousePos.x - centerX;
-          const dy = mousePos.y - centerY;
+          const dx = mouseX - centerX;
+          const dy = mouseY - centerY;
           const distanceSquared = dx * dx + dy * dy;
           
           if (distanceSquared < lensRadiusSquared) {
@@ -377,7 +390,7 @@ export default function CursorSmudge() {
       
       // Clear with slow fade effect (creates smudge trail)
       ctx.fillStyle = "rgba(255, 255, 255, 0.02)";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
 
       // Update and draw trails with wave effect
       trailsRef.current = trailsRef.current.filter((trail, index) => {
@@ -752,18 +765,17 @@ export default function CursorSmudge() {
       });
 
       // Draw current cursor position with stronger wave effect
-      if (mousePos.x > 0 && mousePos.y > 0) {
+      if (mouseX > 0 && mouseY > 0) {
         const waveX = Math.sin(timeRef.current * 3) * 8;
         const waveY = Math.cos(timeRef.current * 2.5) * 8;
         
-        // Cursor size based on orientation: 1/3 height in landscape, 1/3 width in portrait
         const cursorRadius = cursorSizeRef.current;
         const cursorGradient = ctx.createRadialGradient(
-          mousePos.x + waveX,
-          mousePos.y + waveY,
+          mouseX + waveX,
+          mouseY + waveY,
           0,
-          mousePos.x + waveX,
-          mousePos.y + waveY,
+          mouseX + waveX,
+          mouseY + waveY,
           cursorRadius
         );
         
@@ -778,7 +790,7 @@ export default function CursorSmudge() {
 
         ctx.fillStyle = cursorGradient;
         ctx.beginPath();
-        ctx.arc(mousePos.x + waveX, mousePos.y + waveY, cursorRadius, 0, Math.PI * 2);
+        ctx.arc(mouseX + waveX, mouseY + waveY, cursorRadius, 0, Math.PI * 2);
         ctx.fill();
         
         // Add additional wave rings
@@ -791,14 +803,22 @@ export default function CursorSmudge() {
           ctx.lineWidth = 2;
           ctx.beginPath();
           ctx.arc(
-            mousePos.x + waveX,
-            mousePos.y + waveY + ringWave,
+            mouseX + waveX,
+            mouseY + waveY + ringWave,
             ringRadius,
             0,
             Math.PI * 2
           );
           ctx.stroke();
         }
+      }
+
+      if (timestamp - lastUiSync > 80) {
+        lastUiSync = timestamp;
+        setMousePos({ ...mousePosRef.current });
+        setZoom(currentZoom);
+        setCurrentTime(timeRef.current);
+        setBlurRegions([...blurRegionsRef.current]);
       }
 
       animationFrameRef.current = requestAnimationFrame(animate);
@@ -822,7 +842,7 @@ export default function CursorSmudge() {
         bodyRef.current.style.removeProperty('--lens-radius');
       }
     };
-  }, [mousePos]);
+  }, []);
 
   return (
     <>

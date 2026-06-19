@@ -3,22 +3,17 @@ import type { Metadata, Viewport } from "next";
 import Link from "next/link";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import ViewportFix from "./components/ViewportFix";
-import CursorSmudge from "./components/CursorSmudge";
-import BouncingStickers from "./components/BouncingStickers";
+import DeferredEffects from "./components/DeferredEffects";
 import ExternalLink from "./components/ExternalLink";
 import "./globals.css";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -88,10 +83,11 @@ export default async function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${geistSans.variable} antialiased`}
       >
         <ViewportFix />
-        <CursorSmudge />
+        <DeferredEffects links={stickerLinks} />
+        {/* Bouncing stickers + cursor effects (deferred) */}
         {/* Fixed overlay logo, independent from all background scaling */}
         <div
           className="siteLogoOverlayWrapper"
@@ -160,8 +156,6 @@ export default async function RootLayout({
             />
           </a>
         </div>
-        {/* Bouncing stickers on top of everything */}
-        <BouncingStickers links={stickerLinks} />
         {children}
         <Analytics />
       </body>
