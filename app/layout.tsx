@@ -42,12 +42,17 @@ const SITE_LOGO_SIZE = {
 } as const;
 
 /**
- * Ctrategy wordmark: same min(px, vw) pattern as SITE_LOGO_SIZE.
- * Desktop px cap is set high — thin strokes read smaller than the square logo at equal width.
+ * Side wordmarks: fluid width is `min(maxWidthPx, max(60vw, …))` in globals.css.
+ * Vertical offset uses clamp() — no hard mobile breakpoint.
  */
 const SITE_STRATEGY_SIZE = {
-  maxWidthPx: 440,
-  maxViewportWidthPercent: 52,
+  leftPx: 12,
+  maxWidthPx: 500,
+} as const;
+
+const SITE_AITYAAHN_SIZE = {
+  rightPx: 16,
+  maxWidthPx: 420,
 } as const;
 
 /** Bottom ad banner: edit these to change size/position (see `.siteAdOverlay*` in globals.css). */
@@ -132,8 +137,8 @@ export default async function RootLayout({
           className="siteStrategyOverlayWrapper"
           style={
             {
+              "--site-strategy-left": `${SITE_STRATEGY_SIZE.leftPx}px`,
               "--site-strategy-max-width": `${SITE_STRATEGY_SIZE.maxWidthPx}px`,
-              "--site-strategy-max-vw": `${SITE_STRATEGY_SIZE.maxViewportWidthPercent}vw`,
             } as CSSProperties
           }
         >
@@ -147,6 +152,29 @@ export default async function RootLayout({
               alt=""
               width={430}
               height={208}
+            />
+          </ExternalLink>
+        </div>
+        {/* Right-side AityAahn wordmark, slightly below vertical center */}
+        <div
+          className="siteAityaahnOverlayWrapper"
+          style={
+            {
+              "--site-aityaahn-right": `${SITE_AITYAAHN_SIZE.rightPx}px`,
+              "--site-aityaahn-max-width": `${SITE_AITYAAHN_SIZE.maxWidthPx}px`,
+            } as CSSProperties
+          }
+        >
+          <ExternalLink
+            href="https://aityaahn.hyperlinks.space/"
+            ariaLabel="Open AityAahn"
+            className="siteAityaahnOverlay"
+          >
+            <img
+              src="/hyperlinks/Assets/AityAahn.svg"
+              alt=""
+              width={317}
+              height={160}
             />
           </ExternalLink>
         </div>
