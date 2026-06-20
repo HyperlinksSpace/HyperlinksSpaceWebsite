@@ -166,7 +166,7 @@ export default async function RootLayout({
           }
         >
           <ExternalLink
-            href="https://aityaahn.hyperlinks.space/"
+            href="https://aityuahn.hyperlinks.space/"
             ariaLabel="Open AityAahn"
             className="siteAityaahnOverlay"
           >
