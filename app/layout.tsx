@@ -92,6 +92,14 @@ export default async function RootLayout({
             crossOrigin="anonymous"
           />
         ))}
+        {["4iza", "maska", "walley"].map((name) => (
+          <link
+            key={name}
+            rel="preload"
+            href={`/hyperlinks/Stikars/${name}.svg`}
+            as="image"
+          />
+        ))}
       </head>
       <body
         className={`${geistSans.variable} antialiased`}

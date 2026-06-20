@@ -277,7 +277,10 @@ body {
   padding: 0;
   margin: 0;
   transform-origin: center center;
-  animation: logoPlay 3s ease-in-out infinite;
+  transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
+  will-change: transform;
+  animation: logoPlay 1.4s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
 }
 
 .siteLogoOverlay svg,
@@ -327,25 +330,27 @@ body {
 }
 
 @keyframes logoPlay {
-  0%,
-  55%,
+  0% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  12% {
+    transform: translate3d(0, 0, 0) rotate(-7deg);
+  }
+  24% {
+    transform: translate3d(0, 0, 0) rotate(7deg);
+  }
+  36% {
+    transform: translate3d(0, 0, 0) rotate(-5deg);
+  }
+  48% {
+    transform: translate3d(0, 0, 0) rotate(5deg);
+  }
+  60% {
+    transform: translate3d(0, 0, 0) rotate(-2deg);
+  }
+  72%,
   100% {
-    transform: rotate(0deg);
-  }
-  10% {
-    transform: rotate(-7deg);
-  }
-  20% {
-    transform: rotate(7deg);
-  }
-  30% {
-    transform: rotate(-5deg);
-  }
-  40% {
-    transform: rotate(5deg);
-  }
-  50% {
-    transform: rotate(-2deg);
+    transform: translate3d(0, 0, 0) rotate(0deg);
   }
 }
 
@@ -398,9 +403,13 @@ body {
 
 .bouncing-sticker {
   position: absolute;
+  top: 0;
+  left: 0;
   display: block;
   pointer-events: auto;
   cursor: pointer;
+  transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
 }
 
 .bouncing-sticker img {

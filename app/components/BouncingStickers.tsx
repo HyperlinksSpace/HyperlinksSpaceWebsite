@@ -3,7 +3,9 @@
 import { useEffect, useRef } from "react";
 
 const STICKER_SIZE = 44;
-const SPEED = 3.6;
+const SPEED_PX_PER_SEC = 240;
+const PHYSICS_STEP_MS = 1000 / 60;
+const MAX_FRAME_MS = 32;
 
 type StickerData = {
   x: number;
@@ -16,8 +18,8 @@ type StickerData = {
 function randomVelocity(): { vx: number; vy: number } {
   const angle = Math.random() * Math.PI * 2;
   return {
-    vx: Math.cos(angle) * SPEED,
-    vy: Math.sin(angle) * SPEED,
+    vx: Math.cos(angle) * SPEED_PX_PER_SEC,
+    vy: Math.sin(angle) * SPEED_PX_PER_SEC,
   };
 }
 
@@ -45,27 +47,32 @@ function reflectVelocity(
   };
 }
 
-function tickStickers(stickers: StickerData[], w: number, h: number): void {
-  const maxX = w - STICKER_SIZE;
-  const maxY = h - STICKER_SIZE;
+function tickStickers(
+  stickers: StickerData[],
+  w: number,
+  h: number,
+  dtMs: number,
+): void {
+  const dt = dtMs / 1000;
+  const maxX = Math.max(0, w - STICKER_SIZE);
+  const maxY = Math.max(0, h - STICKER_SIZE);
 
   for (const s of stickers) {
-    s.x += s.vx;
-    s.y += s.vy;
+    s.x += s.vx * dt;
+    s.y += s.vy * dt;
 
-    if (s.x <= 0) {
+    if (s.x < 0) {
       s.x = 0;
       s.vx = Math.abs(s.vx);
-    }
-    if (s.x >= maxX) {
+    } else if (s.x > maxX) {
       s.x = maxX;
       s.vx = -Math.abs(s.vx);
     }
-    if (s.y <= 0) {
+
+    if (s.y < 0) {
       s.y = 0;
       s.vy = Math.abs(s.vy);
-    }
-    if (s.y >= maxY) {
+    } else if (s.y > maxY) {
       s.y = maxY;
       s.vy = -Math.abs(s.vy);
     }
@@ -104,7 +111,7 @@ function tickStickers(stickers: StickerData[], w: number, h: number): void {
       b.vx = bReflected.vx;
       b.vy = bReflected.vy;
 
-      const half = overlap / 2;
+      const half = Math.min(overlap / 2, 3);
       a.x -= nx * half;
       a.y -= ny * half;
       b.x += nx * half;
@@ -119,6 +126,10 @@ const STICKER_SOURCES = [
   "/hyperlinks/Stikars/walley.svg",
 ] as const;
 
+function applyStickerTransform(el: HTMLElement, s: StickerData): void {
+  el.style.transform = `translate3d(${s.x}px, ${s.y}px, 0)`;
+}
+
 export default function BouncingStickers({ links }: { links: string[] }) {
   const stickersRef = useRef<StickerData[]>([]);
   const stickerElsRef = useRef<(HTMLAnchorElement | null)[]>([]);
@@ -127,6 +138,11 @@ export default function BouncingStickers({ links }: { links: string[] }) {
     links.length >= 5 ? links.slice(0, 5) : [...links, "/"];
 
   useEffect(() => {
+    STICKER_SOURCES.forEach((src) => {
+      const img = new Image();
+      img.src = src;
+    });
+
     const w = window.innerWidth;
     const h = window.innerHeight;
     stickersRef.current = STICKER_SOURCES.map((src) => initSticker(src, w, h));
@@ -134,28 +150,31 @@ export default function BouncingStickers({ links }: { links: string[] }) {
     stickerElsRef.current.forEach((el, i) => {
       const s = stickersRef.current[i];
       if (el && s) {
-        el.style.left = `${s.x}px`;
-        el.style.top = `${s.y}px`;
+        applyStickerTransform(el, s);
       }
     });
 
-    let lastFrame = 0;
+    let lastTime = performance.now();
+    let accumulator = 0;
 
     function loop(now: number) {
-      if (now - lastFrame < 32) {
-        rafRef.current = requestAnimationFrame(loop);
-        return;
-      }
-      lastFrame = now;
+      const frameMs = Math.min(Math.max(now - lastTime, 0), MAX_FRAME_MS);
+      lastTime = now;
+      accumulator += frameMs;
 
       const current = stickersRef.current;
-      tickStickers(current, window.innerWidth, window.innerHeight);
+      const boundsW = window.innerWidth;
+      const boundsH = window.innerHeight;
+
+      while (accumulator >= PHYSICS_STEP_MS) {
+        tickStickers(current, boundsW, boundsH, PHYSICS_STEP_MS);
+        accumulator -= PHYSICS_STEP_MS;
+      }
 
       stickerElsRef.current.forEach((el, i) => {
         const s = current[i];
         if (el && s) {
-          el.style.left = `${s.x}px`;
-          el.style.top = `${s.y}px`;
+          applyStickerTransform(el, s);
         }
       });
 
@@ -211,8 +230,9 @@ export default function BouncingStickers({ links }: { links: string[] }) {
             alt=""
             width={STICKER_SIZE}
             height={STICKER_SIZE}
-            loading="lazy"
+            loading="eager"
             decoding="async"
+            fetchPriority="high"
             style={{
               display: "block",
               width: "100%",
