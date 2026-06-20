@@ -1,30 +1,11 @@
-import { readFile } from "node:fs/promises";
-import path from "node:path";
 import AnimatedGrid from "./components/AnimatedGrid";
 import AnimatedCell from "./components/AnimatedCell";
+import { SITE_LINKS } from "./siteLinks";
 
-function parseLinksFile(fileContents: string): string[] {
-  return fileContents
-    .split(/\r?\n/g)
-    .map((l) => l.trim())
-    .filter(Boolean)
-    .map((l) => l.replace(/^\d+\.\s*/, "").trim());
-}
-
-export default async function Home() {
-  const linksPath = path.join(
-    process.cwd(),
-    "public",
-    "hyperlinks",
-    "links.txt",
-  );
-
-  const linksTxt = await readFile(linksPath, "utf8");
-  const links = parseLinksFile(linksTxt);
-
+export default function Home() {
   const cells = [1, 2, 3, 4].map((n) => ({
     n,
-    href: links[n - 1] ?? "#",
+    href: SITE_LINKS.grid[n - 1] ?? "#",
     svgSrc: `/hyperlinks/${n}.svg`,
   }));
 

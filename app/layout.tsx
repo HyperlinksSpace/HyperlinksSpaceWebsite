@@ -1,13 +1,12 @@
 import type { CSSProperties } from "react";
 import type { Metadata, Viewport } from "next";
 import Link from "next/link";
-import { readFile } from "node:fs/promises";
-import path from "node:path";
 import { Geist } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import ViewportFix from "./components/ViewportFix";
 import DeferredEffects from "./components/DeferredEffects";
 import ExternalLink from "./components/ExternalLink";
+import { getStickerLinks, SITE_LINKS } from "./siteLinks";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -62,28 +61,12 @@ const SITE_AD_SIZE = {
   maxViewportWidthPercent: 77,
 } as const;
 
-function parseLinksFile(contents: string): string[] {
-  return contents
-    .split(/\r?\n/g)
-    .map((l) => l.trim())
-    .filter(Boolean)
-    .map((l) => l.replace(/^\d+\.\s*/, "").trim());
-}
-
-export default async function RootLayout({
+export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  let stickerLinks: string[] = ["/", "/", "/", "/", "https://landing.program.hyperlinks.space/"];
-  try {
-    const linksPath = path.join(process.cwd(), "public", "hyperlinks", "links.txt");
-    const linksTxt = await readFile(linksPath, "utf8");
-    const fromFile = parseLinksFile(linksTxt);
-    stickerLinks = [...fromFile.slice(0, 4), "https://landing.program.hyperlinks.space/"];
-  } catch {
-    // use defaults
-  }
+  const stickerLinks = getStickerLinks();
 
   return (
     <html lang="en">
@@ -143,8 +126,8 @@ export default async function RootLayout({
           }
         >
           <ExternalLink
-            href="https://ctrategy.hyperlinks.space/"
-            ariaLabel="Open Hyperlinks Space Strategy"
+            href={SITE_LINKS.overlays.strategy.href}
+            ariaLabel={SITE_LINKS.overlays.strategy.ariaLabel}
             className="siteStrategyOverlay"
           >
             <img
@@ -166,8 +149,8 @@ export default async function RootLayout({
           }
         >
           <ExternalLink
-            href="https://aityuahn.hyperlinks.space/"
-            ariaLabel="Open AityUahn"
+            href={SITE_LINKS.overlays.aityUahn.href}
+            ariaLabel={SITE_LINKS.overlays.aityUahn.ariaLabel}
             className="siteAityaahnOverlay"
           >
             <img
@@ -189,11 +172,9 @@ export default async function RootLayout({
             } as CSSProperties
           }
         >
-          <a
-            href="https://landing.program.hyperlinks.space/"
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label="Launch Hyperlinks Space Program"
+          <ExternalLink
+            href={SITE_LINKS.overlays.program.href}
+            ariaLabel={SITE_LINKS.overlays.program.ariaLabel}
             className="siteAdOverlay"
           >
             <img
@@ -201,7 +182,7 @@ export default async function RootLayout({
               alt=""
               style={{ display: "block", width: "100%", height: "auto" }}
             />
-          </a>
+          </ExternalLink>
         </div>
         {children}
         <Analytics />
