@@ -1,1 +1,3 @@
 fix social preview
+Black and White version of the site with the switch to the colourfull one
+Mode: B/W, Color | Lang: RU, EN
