@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useLanguage } from "./LanguageContext";
 
 export default function LanguageSwitcher() {
-  const [language, setLanguage] = useState<"en" | "ru">("en");
+  const { language, setLanguage } = useLanguage();
 
   return (
     <div className="langSwitchWrapper">

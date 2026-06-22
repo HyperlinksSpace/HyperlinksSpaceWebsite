@@ -5,8 +5,9 @@ import { Geist } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import ViewportFix from "./components/ViewportFix";
 import DeferredEffects from "./components/DeferredEffects";
-import ExternalLink from "./components/ExternalLink";
 import LanguageSwitcher from "./components/LanguageSwitcher";
+import StrategyOverlay from "./components/StrategyOverlay";
+import { LanguageProvider } from "./components/LanguageContext";
 import { getStickerLinks, SITE_LINKS } from "./siteLinks";
 import "./globals.css";
 
@@ -93,52 +94,42 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} antialiased`}
       >
-        <ViewportFix />
-        <DeferredEffects links={stickerLinks} />
-        {/* Bouncing stickers + cursor effects (deferred) */}
-        {/* Fixed overlay logo, independent from all background scaling */}
-        <div
-          className="siteLogoOverlayWrapper"
-          style={
-            {
-              "--site-logo-top": `${SITE_LOGO_SIZE.topPx}px`,
-              "--site-logo-max-width": `${SITE_LOGO_SIZE.maxWidthPx}px`,
-              "--site-logo-max-vw": `${SITE_LOGO_SIZE.maxViewportWidthPercent}vw`,
-            } as CSSProperties
-          }
-        >
-          <Link href="/" aria-label="Reload" className="siteLogoOverlay">
-            <img
-              src="/hyperlinks/Assets/HyperlinksSpace.svg"
-              alt=""
-              width={100}
-              height={100}
-            />
-          </Link>
-        </div>
-        {/* Left-center strategy wordmark */}
-        <div
-          className="siteStrategyOverlayWrapper"
-          style={
-            {
-              "--site-strategy-left": `${SITE_STRATEGY_SIZE.leftPx}px`,
-              "--site-strategy-max-width": `${SITE_STRATEGY_SIZE.maxWidthPx}px`,
-            } as CSSProperties
-          }
-        >
-          <ExternalLink
-            href={SITE_LINKS.overlays.strategy.href}
-            ariaLabel={SITE_LINKS.overlays.strategy.ariaLabel}
-            className="siteStrategyOverlay"
+        <LanguageProvider>
+          <ViewportFix />
+          <DeferredEffects links={stickerLinks} />
+          {/* Bouncing stickers + cursor effects (deferred) */}
+          {/* Fixed overlay logo, independent from all background scaling */}
+          <div
+            className="siteLogoOverlayWrapper"
+            style={
+              {
+                "--site-logo-top": `${SITE_LOGO_SIZE.topPx}px`,
+                "--site-logo-max-width": `${SITE_LOGO_SIZE.maxWidthPx}px`,
+                "--site-logo-max-vw": `${SITE_LOGO_SIZE.maxViewportWidthPercent}vw`,
+              } as CSSProperties
+            }
           >
-            <img
-              src="/hyperlinks/Assets/Ctrategy.svg"
-              alt=""
-              width={430}
-              height={208}
-            />
-          </ExternalLink>
-        </div>
+            <Link href="/" aria-label="Reload" className="siteLogoOverlay">
+              <img
+                src="/hyperlinks/Assets/HyperlinksSpace.svg"
+                alt=""
+                width={100}
+                height={100}
+              />
+            </Link>
+          </div>
+          {/* Left-center strategy wordmark */}
+          <div
+            className="siteStrategyOverlayWrapper"
+            style={
+              {
+                "--site-strategy-left": `${SITE_STRATEGY_SIZE.leftPx}px`,
+                "--site-strategy-max-width": `${SITE_STRATEGY_SIZE.maxWidthPx}px`,
+              } as CSSProperties
+            }
+          >
+            <StrategyOverlay />
+          </div>
         {/* Right-side AityAahn wordmark, slightly below vertical center */}
         <div
           className="siteAityaahnOverlayWrapper"
@@ -185,10 +176,11 @@ export default function RootLayout({
             />
           </ExternalLink>
         </div>
-        {/* Language switcher at bottom left corner */}
-        <LanguageSwitcher />
-        {children}
-        <Analytics />
+          {/* Language switcher at bottom left corner */}
+          <LanguageSwitcher />
+          {children}
+          <Analytics />
+        </LanguageProvider>
       </body>
     </html>
   );
