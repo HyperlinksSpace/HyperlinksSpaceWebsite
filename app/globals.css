@@ -481,22 +481,50 @@ body {
 /* Language switcher styles */
 .langSwitchWrapper {
   position: fixed;
-  left: var(--lang-switch-left, 20px);
-  bottom: var(--lang-switch-bottom, 20px);
+  right: 20px;
+  bottom: 20px;
   z-index: 2147483647;
   pointer-events: none;
+  display: flex;
+  align-items: flex-end;
+  gap: 0;
 }
 
 .langSwitch {
   pointer-events: auto;
   cursor: pointer;
   display: flex;
-  align-items: center;
-  gap: 8px;
+  align-items: flex-end;
 }
 
 .langSwitch img {
-  width: auto;
-  height: auto;
   display: block;
+  width: auto;
+  cursor: pointer;
+}
+
+.langSwitch .langIcon {
+  height: 80px;
+}
+
+.langSwitch .enIcon {
+  height: 80px;
+}
+
+.langSwitch .ruIcon {
+  height: 60px;
+}
+
+@media (max-width: 640px) {
+  .langSwitch .langIcon {
+    display: none;
+  }
+  
+  .langSwitch .enIcon {
+    height: 40px;
+  }
+  
+  .langSwitch .ruIcon {
+    height: 30px;
+  }
 }
