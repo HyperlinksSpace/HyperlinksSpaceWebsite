@@ -6,6 +6,7 @@ import { Analytics } from "@vercel/analytics/next";
 import ViewportFix from "./components/ViewportFix";
 import DeferredEffects from "./components/DeferredEffects";
 import ExternalLink from "./components/ExternalLink";
+import LanguageSwitcher from "./components/LanguageSwitcher";
 import { getStickerLinks, SITE_LINKS } from "./siteLinks";
 import "./globals.css";
 
@@ -184,6 +185,8 @@ export default function RootLayout({
             />
           </ExternalLink>
         </div>
+        {/* Language switcher at bottom left corner */}
+        <LanguageSwitcher />
         {children}
         <Analytics />
       </body>

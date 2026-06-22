@@ -477,3 +477,26 @@ body {
     transform: none;
   }
 }
+
+/* Language switcher styles */
+.langSwitchWrapper {
+  position: fixed;
+  left: var(--lang-switch-left, 20px);
+  bottom: var(--lang-switch-bottom, 20px);
+  z-index: 2147483647;
+  pointer-events: none;
+}
+
+.langSwitch {
+  pointer-events: auto;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.langSwitch img {
+  width: auto;
+  height: auto;
+  display: block;
+}
