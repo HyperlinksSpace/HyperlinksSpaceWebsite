@@ -347,7 +347,7 @@ body {
   display: block;
   cursor: pointer;
   pointer-events: auto;
-  animation: logoFloat 1.18s ease-in-out infinite;
+  animation: aityaahnFloat 1.18s ease-in-out infinite;
 }
 
 .siteAityaahnOverlayWrapper {
@@ -370,6 +370,12 @@ body {
   0% { transform: translateY(0); }
   15% { transform: translateY(6px); }
   100% { transform: translateY(0); }
+}
+
+@keyframes aityaahnFloat {
+  0% { transform: translate3d(0, 0, 0); }
+  15% { transform: translate3d(6px, -6px, 0); }
+  100% { transform: translate3d(0, 0, 0); }
 }
 
 @keyframes logoPlay {
