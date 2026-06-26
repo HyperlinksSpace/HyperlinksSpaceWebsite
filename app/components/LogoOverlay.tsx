@@ -1,65 +1,45 @@
-"use client";
-
 export default function LogoOverlay() {
-  const handleLogoClick = () => {
-    window.location.reload();
-  };
-
   return (
-    <div
-      style={{
-        position: "fixed",
-        top: "20px",
-        left: "50%",
-        transform: "translateX(-50%)",
-        zIndex: 9999,
-        pointerEvents: "none", // Allow clicks to pass through the container
-      }}
+    <svg
+      className="siteLogoOverlaySvg"
+      width="24"
+      height="24"
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      preserveAspectRatio="xMidYMid meet"
+      aria-hidden="true"
     >
-      <div
-        onClick={handleLogoClick}
-        onTouchEnd={handleLogoClick}
-        style={{
-          pointerEvents: "auto", // Enable clicks on the logo itself
-          cursor: "pointer",
-          userSelect: "none",
-          WebkitUserSelect: "none",
-          touchAction: "manipulation",
-        }}
-      >
-        <svg
-          width={100}
-          height={100}
-          viewBox="0 0 100 100"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-          style={{
-            display: "block",
-            width: "100px",
-            height: "100px",
-          }}
-        >
-          <rect x="66.125" y="39.0625" width="3.125" height="21.875" fill="#1AAA11" />
-          <rect x="31.75" y="39.0625" width="3.125" height="21.875" fill="#1AAA11" />
+      <defs>
+        <clipPath id="site-logo-fill-clip">
           <path
-            fillRule="evenodd"
-            clipRule="evenodd"
-            d="M31.75 46.25V87.5L54.1133 67.3731L31.75 35.9533V46.25ZM46.2465 33.2031L64.9531 57.6172L69.25 53.75V12.5L46.2465 33.2031Z"
-            fill="#1AAA11"
+            d="M6 24L13.2 19.2L17.28 24H24V0H22.8V22.8H18L6 7.2V24Z"
           />
           <path
-            d="M69.25 60.5042V15.625V12.5L43.4401 27.4647L50.5 36.5021L69.25 60.5042Z"
-            fill="#1AAA11"
+            d="M18 0L10.8 4.8L6.72 0H0V24H1.2V1.2H6L18 16.8V0Z"
           />
-          <path d="M31.75 87.5L56.5494 73.0047L49.5135 63.4979L31.75 87.5Z" fill="#1AAA11" />
-          <path
-            fillRule="evenodd"
-            clipRule="evenodd"
-            d="M31.75 12.5L43.4401 27.4647L50.5 36.5021L69.25 60.5042V65.5812L30.2256 15.625H16.125V84.375V87.5H13V12.5H31.75ZM84.875 15.625V84.375H68.8517L31.75 34.2427V39.4959L49.5135 63.4979L56.5494 73.0047L67.277 87.5H88V12.5H84.875V15.625Z"
-            fill="#1AAA11"
-          />
-        </svg>
-      </div>
-    </div>
+        </clipPath>
+      </defs>
+
+      <path
+        className="siteLogoOverlayShape"
+        d="M6 24L13.2 19.2L17.28 24H24V0H22.8V22.8H18L6 7.2V24Z"
+      />
+      <path
+        className="siteLogoOverlayShape"
+        d="M18 0L10.8 4.8L6.72 0H0V24H1.2V1.2H6L18 16.8V0Z"
+      />
+
+      <g clipPath="url(#site-logo-fill-clip)">
+        <rect
+          className="siteLogoOverlayShineLine"
+          x="11.88"
+          y="-16"
+          width="0.24"
+          height="56"
+          rx="0.12"
+        />
+      </g>
+    </svg>
   );
 }

@@ -7,6 +7,7 @@ import ViewportFix from "./components/ViewportFix";
 import DeferredEffects from "./components/DeferredEffects";
 import ExternalLink from "./components/ExternalLink";
 import LanguageSwitcher from "./components/LanguageSwitcher";
+import LogoOverlay from "./components/LogoOverlay";
 import StrategyOverlay from "./components/StrategyOverlay";
 import { LanguageProvider } from "./components/LanguageContext";
 import { getStickerLinks, SITE_LINKS } from "./siteLinks";
@@ -111,12 +112,7 @@ export default function RootLayout({
             }
           >
             <Link href="/" aria-label="Reload" className="siteLogoOverlay">
-              <img
-                src="/hyperlinks/Assets/HyperlinksSpace.svg"
-                alt=""
-                width={100}
-                height={100}
-              />
+              <LogoOverlay />
             </Link>
           </div>
           {/* Left-center strategy wordmark */}

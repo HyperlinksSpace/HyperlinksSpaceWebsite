@@ -290,6 +290,26 @@ body {
   display: block;
 }
 
+.siteLogoOverlaySvg {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: hidden;
+}
+
+.siteLogoOverlayShape {
+  fill: #1AAA11;
+}
+
+.siteLogoOverlayShineLine {
+  fill: #fff;
+  opacity: 0;
+  transform-box: view-box;
+  transform-origin: center;
+  will-change: transform, opacity;
+  animation: logoShineSweep 3s linear infinite;
+}
+
 /* Left-edge strategy wordmark — fluid width, min 60vw until desktop cap */
 .siteStrategyOverlay {
   width: min(
@@ -374,6 +394,27 @@ body {
   72%,
   100% {
     transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+}
+
+@keyframes logoShineSweep {
+  0%,
+  76% {
+    opacity: 0;
+    transform: translate3d(-50px, 50px, 0) rotate(-45deg);
+  }
+  78% {
+    opacity: 1;
+    transform: translate3d(-50px, 50px, 0) rotate(-45deg);
+  }
+  88% {
+    opacity: 1;
+    transform: translate3d(50px, -50px, 0) rotate(-45deg);
+  }
+  90%,
+  100% {
+    opacity: 0;
+    transform: translate3d(50px, -50px, 0) rotate(-45deg);
   }
 }
 
