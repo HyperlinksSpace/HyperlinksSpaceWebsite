@@ -23,9 +23,9 @@ export const metadata: Metadata = {
   title: "Hyperlinks.Space",
   description: "Hyperlinks.Space",
   icons: {
-    icon: "/favicon.ico?v=2",
-    shortcut: "/favicon.ico?v=2",
-    apple: "/favicon.ico?v=2",
+    icon: "/favicon.png",
+    shortcut: "/favicon.png",
+    apple: "/favicon.png",
   },
 };
 

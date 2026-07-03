@@ -3,11 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "favicon": "python scripts/svg_to_favicon.py",
     "dev": "next dev",
-    "predev": "npm run favicon",
     "build": "next build",
-    "prebuild": "npm run favicon",
     "start": "next start",
     "lint": "eslint"
   },
