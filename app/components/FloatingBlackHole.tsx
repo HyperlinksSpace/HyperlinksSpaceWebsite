@@ -4,13 +4,15 @@ import { useEffect, useRef } from "react";
 import {
   DEFAULT_BLACK_HOLE,
   useBlackHole,
+  type BlackHolePosition,
   type BlackHoleSettings,
 } from "./BlackHoleContext";
 
 /**
  * Small binary BH + screen-wide lensing.
- * Full-viewport canvas is click-through; a tiny handle is what you drag.
- * Near-core: full ray march. Far field: cheap residual bend. Sharp DPR.
+ * Full-viewport canvas is click-through.
+ * Drag uses a core/disk hotspot: grab cursor + drag there; elsewhere clicks pass to
+ * Strategy / stickers / links underneath.
  */
 
 const VERT = `#version 300 es
@@ -578,25 +580,36 @@ function clampIntoBounds(
 }
 
 export default function FloatingBlackHole() {
-  const { settings, panelOpen } = useBlackHole();
+  const { settings, setSettings, panelOpen } = useBlackHole();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const handleRef = useRef<HTMLDivElement>(null);
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
   const panelOpenRef = useRef(panelOpen);
   panelOpenRef.current = panelOpen;
+  const repositionRef = useRef<(() => void) | null>(null);
   const posRef = useRef({
     x: 0,
     y: 0,
     ready: false,
+    userPlaced: false,
     underStrategy: false,
   });
   const dragRef = useRef({ active: false, ox: 0, oy: 0 });
 
+  useEffect(() => {
+    repositionRef.current?.();
+  }, [settings.position]);
+
   // When settings open, park BH in the largest clear on-screen region (never off-canvas)
   useEffect(() => {
     const handle = handleRef.current;
-    if (!handle || !panelOpen) return;
+    if (!handle) return;
+
+    if (!panelOpen) {
+      repositionRef.current?.();
+      return;
+    }
 
     let cancelled = false;
     const park = () => {
@@ -641,7 +654,7 @@ export default function FloatingBlackHole() {
 
     const gl = canvas.getContext("webgl2", {
       alpha: true,
-      antialias: true,
+      antialias: false,
       premultipliedAlpha: true,
       powerPreference: "high-performance",
     });
@@ -722,6 +735,9 @@ export default function FloatingBlackHole() {
     let placeTries = 0;
     let placeRetryAt = 0;
     let cachedHs = mobile ? 64 : 56;
+    let lastDrawAt = 0;
+    const targetFps = low ? 30 : 45;
+    const minFrameMs = 1000 / targetFps;
 
     // Cover the full layout viewport so the canvas box never crops the effect
     const viewSize = () => ({
@@ -741,6 +757,80 @@ export default function FloatingBlackHole() {
 
     const applyHandleTransform = () => {
       handle.style.transform = `translate3d(${posRef.current.x}px, ${posRef.current.y}px, 0)`;
+    };
+
+    const applyPositionRatios = (pos: BlackHolePosition) => {
+      const vis = visibleBounds();
+      const hs = handleSize();
+      posRef.current.x = vis.left + pos.xRatio * vis.w - hs * 0.5;
+      posRef.current.y = vis.top + pos.yRatio * vis.h - hs * 0.5;
+      clampHandle(1);
+      applyHandleTransform();
+      posRef.current.ready = true;
+      posRef.current.userPlaced = true;
+      posRef.current.underStrategy = true;
+    };
+
+    const savePosition = () => {
+      const vis = visibleBounds();
+      const hs = handleSize();
+      const cx = posRef.current.x + hs * 0.5;
+      const cy = posRef.current.y + hs * 0.5;
+      const next: BlackHolePosition = {
+        xRatio: Math.min(1, Math.max(0, (cx - vis.left) / vis.w)),
+        yRatio: Math.min(1, Math.max(0, (cy - vis.top) / vis.h)),
+      };
+      posRef.current.userPlaced = true;
+      posRef.current.underStrategy = true;
+      setSettings((s) => ({ ...s, position: next }));
+    };
+
+    const syncCoreHandleSize = () => {
+      const vis = visibleBounds();
+      const s = settingsRef.current;
+      const visR = visualRadiusPx(s, vis.h, mobile, fitMul);
+      // Match core+disk footprint so hover tracks the visible holes, not just center
+      const hotR = Math.max(
+        40,
+        Math.min(visR * 0.52, Math.min(vis.w, vis.h) * 0.24)
+      );
+      const corePx = Math.round(hotR * 2);
+      const prev = cachedHs || corePx;
+      if (Math.abs(corePx - prev) < 2 && handle.offsetWidth > 0) return;
+      const cx = posRef.current.x + prev * 0.5;
+      const cy = posRef.current.y + prev * 0.5;
+      handle.style.width = `${corePx}px`;
+      handle.style.height = `${corePx}px`;
+      cachedHs = corePx;
+      if (posRef.current.ready) {
+        posRef.current.x = cx - corePx * 0.5;
+        posRef.current.y = cy - corePx * 0.5;
+        applyHandleTransform();
+      }
+    };
+
+    const handleCenter = () => {
+      const hs = handleSize();
+      return {
+        cx: posRef.current.x + hs * 0.5,
+        cy: posRef.current.y + hs * 0.5,
+      };
+    };
+
+    /** Opaque cores + bright disks — not the soft sky glow. */
+    const isBhDragHotspot = (clientX: number, clientY: number) => {
+      const { cx, cy } = handleCenter();
+      const hs = handleSize();
+      return Math.hypot(clientX - cx, clientY - cy) <= hs * 0.5;
+    };
+
+    const isSiteChrome = (target: EventTarget | null) => {
+      if (!(target instanceof Element)) return false;
+      return Boolean(
+        target.closest(
+          ".bhSettingsWrapper, .themeSwitchWrapper, .langSwitchWrapper, .bhSettingsPanel, #bh-settings-panel"
+        )
+      );
     };
 
     const handleSize = () => {
@@ -837,6 +927,11 @@ export default function FloatingBlackHole() {
     };
 
     const placeHandleDefault = () => {
+      if (posRef.current.userPlaced) return;
+      if (settingsRef.current.position) {
+        applyPositionRatios(settingsRef.current.position);
+        return;
+      }
       if (posRef.current.underStrategy) return;
 
       const vis = visibleBounds();
@@ -880,11 +975,11 @@ export default function FloatingBlackHole() {
     const resize = () => {
       const { w: cssW, h: cssH } = viewSize();
       // Fixed DPR budget — no adaptive thrashing
-      const dprCap = low ? 1 : 1.25;
+      const dprCap = low ? 1 : 1.15;
       const dpr = Math.min(window.devicePixelRatio || 1, dprCap);
       let w = Math.max(1, Math.floor(cssW * dpr));
       let h = Math.max(1, Math.floor(cssH * dpr));
-      const maxPix = low ? 0.85e6 : 1.5e6;
+      const maxPix = low ? 0.65e6 : 1.1e6;
       if (w * h > maxPix) {
         const s = Math.sqrt(maxPix / (w * h));
         w = Math.max(1, Math.floor(w * s));
@@ -909,8 +1004,12 @@ export default function FloatingBlackHole() {
         (cssW !== lastCssW || cssH !== lastCssH) &&
         !dragRef.current.active
       ) {
-        posRef.current.underStrategy = false;
-        placeTries = 0;
+        if (settingsRef.current.position) {
+          applyPositionRatios(settingsRef.current.position);
+        } else if (!posRef.current.userPlaced) {
+          posRef.current.underStrategy = false;
+          placeTries = 0;
+        }
       }
       lastCssW = cssW;
       lastCssH = cssH;
@@ -946,10 +1045,17 @@ export default function FloatingBlackHole() {
       const base = settingsRef.current;
       if (!visible || !base.enabled) return;
 
+      if (now - lastDrawAt < minFrameMs) return;
+      lastDrawAt = now;
+
       if (needsResize) resize();
-      else if (!posRef.current.underStrategy && now >= placeRetryAt) {
+      else if (
+        !posRef.current.userPlaced &&
+        !posRef.current.underStrategy &&
+        now >= placeRetryAt
+      ) {
         placeHandleDefault();
-        placeRetryAt = now + 50; // ~20Hz placement retries max
+        placeRetryAt = now + 80;
       }
 
       let t = (now - start) / 1000;
@@ -972,6 +1078,7 @@ export default function FloatingBlackHole() {
         (panelOpenRef.current && !dragRef.current.active)
       ) {
         recomputeScale();
+        syncCoreHandleSize();
       }
       const scale = cachedScale;
       const [ax, ay] = anchorFromPos();
@@ -989,7 +1096,7 @@ export default function FloatingBlackHole() {
       gl.uniform1f(uni.sky, s.sky);
       gl.uniform1f(uni.orbit, s.mode === "auto" ? 0.22 : 0.14);
       gl.uniform1f(uni.scale, scale);
-      gl.uniform1f(uni.quality, low ? 0.75 : 0.92);
+      gl.uniform1f(uni.quality, low ? 0.62 : 0.82);
       gl.uniform1f(uni.light, lightMode);
       gl.uniform1f(uni.mobile, mobile ? 1 : 0);
       gl.uniform4f(uni.bh1, s.bh1.radius, s.bh1.spin, s.bh1.diskInner, s.bh1.diskOuter);
@@ -1001,8 +1108,22 @@ export default function FloatingBlackHole() {
       if (!base.play) pausedDrawn = true;
     };
 
-    placeHandleDefault();
+    const applySavedOrDefault = () => {
+      const saved = settingsRef.current.position;
+      if (saved) {
+        applyPositionRatios(saved);
+        return;
+      }
+      posRef.current.userPlaced = false;
+      posRef.current.underStrategy = false;
+      placeTries = 0;
+      placeHandleDefault();
+    };
+    repositionRef.current = applySavedOrDefault;
+
+    applySavedOrDefault();
     resize();
+    syncCoreHandleSize();
     raf = requestAnimationFrame(draw);
 
     const onVis = () => {
@@ -1030,39 +1151,93 @@ export default function FloatingBlackHole() {
       posRef.current.y = e.clientY - dragRef.current.oy;
       applyHandleTransform();
     };
-    const onUp = (e: PointerEvent) => {
+
+    const endDrag = (e: PointerEvent) => {
       if (!dragRef.current.active) return;
       dragRef.current.active = false;
       handle.classList.remove("is-dragging");
+      document.documentElement.classList.remove("bh-dragging");
       clampHandle(1);
+      syncCoreHandleSize();
       applyHandleTransform();
+      savePosition();
       try {
         handle.releasePointerCapture(e.pointerId);
       } catch {
         /* ignore */
       }
       window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      window.removeEventListener("pointercancel", onUp);
+      window.removeEventListener("pointerup", endDrag);
+      window.removeEventListener("pointercancel", endDrag);
+      updateHoverState(e.clientX, e.clientY, e.target);
     };
-    const onDown = (e: PointerEvent) => {
-      if (e.button !== 0 && e.pointerType === "mouse") return;
-      e.preventDefault();
-      e.stopPropagation();
+
+    const beginDrag = (e: PointerEvent) => {
       dragRef.current.active = true;
       dragRef.current.ox = e.clientX - posRef.current.x;
       dragRef.current.oy = e.clientY - posRef.current.y;
       handle.classList.add("is-dragging");
+      document.documentElement.classList.add("bh-dragging");
+      document.documentElement.classList.remove("bh-grab-hover");
+      handle.style.pointerEvents = "auto";
       try {
         handle.setPointerCapture(e.pointerId);
       } catch {
         /* ignore */
       }
       window.addEventListener("pointermove", onMove, { passive: false });
-      window.addEventListener("pointerup", onUp);
-      window.addEventListener("pointercancel", onUp);
+      window.addEventListener("pointerup", endDrag);
+      window.addEventListener("pointercancel", endDrag);
     };
-    handle.addEventListener("pointerdown", onDown);
+
+    const updateHoverState = (
+      clientX: number,
+      clientY: number,
+      target: EventTarget | null
+    ) => {
+      if (dragRef.current.active) return;
+      const hot = isBhDragHotspot(clientX, clientY) && !isSiteChrome(target);
+      handle.classList.toggle("is-hot", hot);
+      document.documentElement.classList.toggle("bh-grab-hover", hot);
+      // Hot: sit above overlays so cores are grab/draggable. Cold: fully click-through.
+      handle.style.pointerEvents = hot ? "auto" : "none";
+      handle.style.zIndex = hot ? "2147483000" : "22";
+    };
+
+    const onHoverMove = (e: PointerEvent) => {
+      if (dragRef.current.active) return;
+      updateHoverState(e.clientX, e.clientY, e.target);
+    };
+
+    const onDownCapture = (e: PointerEvent) => {
+      if (e.button !== 0 && e.pointerType === "mouse") return;
+      if (dragRef.current.active) return;
+      if (isSiteChrome(e.target)) return;
+      if (!isBhDragHotspot(e.clientX, e.clientY)) return;
+      // Core/disk zone → BH drag; outside stays available to Strategy / stickers / links
+      e.preventDefault();
+      e.stopPropagation();
+      beginDrag(e);
+    };
+
+    const onDown = (e: PointerEvent) => {
+      if (e.button !== 0 && e.pointerType === "mouse") return;
+      if (dragRef.current.active) return;
+      if (!isBhDragHotspot(e.clientX, e.clientY)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      beginDrag(e);
+    };
+
+    handle.style.pointerEvents = "none";
+    const reducedMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)"
+    ).matches;
+    if (!reducedMotion) {
+      window.addEventListener("pointermove", onHoverMove, { passive: true });
+      window.addEventListener("pointerdown", onDownCapture, true);
+      handle.addEventListener("pointerdown", onDown);
+    }
 
     return () => {
       cancelAnimationFrame(raf);
@@ -1072,10 +1247,15 @@ export default function FloatingBlackHole() {
       window.visualViewport?.removeEventListener("scroll", onResize);
       document.removeEventListener("visibilitychange", onVis);
       themeMo.disconnect();
-      handle.removeEventListener("pointerdown", onDown);
+      if (!reducedMotion) {
+        handle.removeEventListener("pointerdown", onDown);
+        window.removeEventListener("pointermove", onHoverMove);
+        window.removeEventListener("pointerdown", onDownCapture, true);
+      }
       window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      window.removeEventListener("pointercancel", onUp);
+      window.removeEventListener("pointerup", endDrag);
+      window.removeEventListener("pointercancel", endDrag);
+      document.documentElement.classList.remove("bh-grab-hover", "bh-dragging");
       gl.deleteTexture(noiseTex);
       gl.deleteProgram(prog);
       gl.deleteShader(vs);

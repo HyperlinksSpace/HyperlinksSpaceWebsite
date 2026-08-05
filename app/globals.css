@@ -9,10 +9,13 @@
   --lens-y: 50%;
   --lens-zoom: 1;
   --lens-radius: 200px;
-  /* BH toggle + theme switcher stack (top-left) + gap under it */
+  /* BH toggle + theme switcher row (top-left) + gap under it */
   --site-left-controls-bottom: calc(
-    max(16px, env(safe-area-inset-top, 0px)) + 128px
+    max(16px, env(safe-area-inset-top, 0px)) + 64px
   );
+  --site-left-controls-top: max(16px, env(safe-area-inset-top, 0px));
+  --site-bh-control-size: 50px;
+  --site-controls-gap: 8px;
 }
 
 :root,
@@ -489,9 +492,12 @@ html[data-theme="light"] .hyperlinksWaveSvg {
 
 @media (max-width: 640px) {
   :root {
+    --site-left-controls-top: max(12px, env(safe-area-inset-top, 0px));
     --site-left-controls-bottom: calc(
-      max(12px, env(safe-area-inset-top, 0px)) + 118px
+      max(12px, env(safe-area-inset-top, 0px)) + 58px
     );
+    --site-bh-control-size: 46px;
+    --site-controls-gap: 6px;
   }
 
   .siteStrategyOverlay {
@@ -516,8 +522,9 @@ html[data-theme="light"] .hyperlinksWaveSvg {
 
 @media (max-height: 500px) {
   :root {
+    --site-left-controls-top: max(10px, env(safe-area-inset-top, 0px));
     --site-left-controls-bottom: calc(
-      max(10px, env(safe-area-inset-top, 0px)) + 108px
+      max(10px, env(safe-area-inset-top, 0px)) + 56px
     );
   }
 
@@ -706,12 +713,12 @@ html[data-theme="light"] .hyperlinksWaveSvg {
   }
 }
 
-/* Black hole settings — top-left, above theme */
+/* Black hole settings — top-left */
 .bhSettingsWrapper {
   position: fixed;
   left: 20px;
   right: auto;
-  top: max(16px, env(safe-area-inset-top, 0px));
+  top: var(--site-left-controls-top);
   bottom: auto;
   z-index: 2147483647;
   pointer-events: none;
@@ -721,15 +728,18 @@ html[data-theme="light"] .hyperlinksWaveSvg {
   pointer-events: auto;
 }
 
-/* Theme switcher — top-left, under BH settings */
+/* Theme switcher — top-left, to the right of the C (BH) control */
 .themeSwitchWrapper {
   position: fixed;
-  left: 20px;
+  left: calc(20px + var(--site-bh-control-size) + var(--site-controls-gap));
   right: auto;
-  top: calc(max(16px, env(safe-area-inset-top, 0px)) + 52px);
+  top: var(--site-left-controls-top);
   bottom: auto;
   z-index: 2147483647;
   pointer-events: none;
+  display: flex;
+  align-items: center;
+  height: var(--site-bh-control-size);
 }
 
 .themeSwitch {
@@ -793,15 +803,16 @@ html[data-theme="light"] .hyperlinksWaveSvg {
   .bhSettingsWrapper {
     left: 12px;
     right: auto;
-    top: max(12px, env(safe-area-inset-top, 0px));
+    top: var(--site-left-controls-top);
     bottom: auto;
   }
 
   .themeSwitchWrapper {
-    left: 12px;
+    left: calc(12px + var(--site-bh-control-size) + var(--site-controls-gap));
     right: auto;
-    top: calc(max(12px, env(safe-area-inset-top, 0px)) + 48px);
+    top: var(--site-left-controls-top);
     bottom: auto;
+    height: var(--site-bh-control-size);
   }
 
   .themeSwitchBtn {
@@ -846,15 +857,15 @@ html[data-theme="light"] .hyperlinksWaveSvg {
   image-rendering: auto;
 }
 
-/* Tiny grab target — only this captures drag */
+/* Drag hotspot — sized to cores/disks; smart hit-test toggles pointer-events */
 .bhDragHandle {
   position: fixed;
   top: 0;
   left: 0;
   width: 56px;
   height: 56px;
-  z-index: 2147483000;
-  pointer-events: auto;
+  z-index: 22;
+  pointer-events: none;
   cursor: grab;
   touch-action: none;
   user-select: none;
@@ -863,25 +874,40 @@ html[data-theme="light"] .hyperlinksWaveSvg {
   background: transparent;
 }
 
+.bhDragHandle.is-hot {
+  pointer-events: auto;
+}
+
 .bhDragHandle.is-dragging {
   cursor: grabbing;
+  pointer-events: auto;
 }
 
 .bhDragHandle::after {
   content: "";
   position: absolute;
-  inset: 16%;
+  inset: 18%;
   border-radius: 50%;
-  border: 1.5px solid color-mix(in srgb, var(--theme-switch-fg) 35%, transparent);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--theme-switch-fg) 8%, transparent);
-  opacity: 0.35;
+  border: 1.5px solid color-mix(in srgb, var(--theme-switch-fg) 40%, transparent);
+  opacity: 0;
   transition: opacity 0.2s ease;
   pointer-events: none;
 }
 
-.bhDragHandle:hover::after,
+.bhDragHandle.is-hot::after,
 .bhDragHandle.is-dragging::after {
-  opacity: 0.85;
+  opacity: 0.55;
+}
+
+/* Force grab cursor over overlays while hovering BH cores/disks */
+html.bh-grab-hover,
+html.bh-grab-hover * {
+  cursor: grab !important;
+}
+
+html.bh-dragging,
+html.bh-dragging * {
+  cursor: grabbing !important;
 }
 
 @media (max-width: 640px) {
@@ -890,8 +916,9 @@ html[data-theme="light"] .hyperlinksWaveSvg {
     height: 64px;
   }
 
-  .bhDragHandle::after {
-    opacity: 0.45;
+  .bhDragHandle.is-hot::after,
+  .bhDragHandle.is-dragging::after {
+    opacity: 0.65;
   }
 }
 
@@ -1100,7 +1127,7 @@ html[data-theme="light"] .bhSettingsPanel {
   .bhSettingsWrapper {
     left: 12px;
     right: auto;
-    top: max(12px, env(safe-area-inset-top, 0px));
+    top: var(--site-left-controls-top);
     bottom: auto;
   }
 

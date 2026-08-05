@@ -59,11 +59,6 @@ const SITE_STRATEGY_SIZE = {
   maxWidthPx: 560,
 } as const;
 
-const SITE_AITYAAHN_SIZE = {
-  rightPx: 12,
-  maxWidthPx: 480,
-} as const;
-
 /** Bottom ad banner: edit these to change size/position (see `.siteAdOverlay*` in globals.css). */
 const SITE_AD_SIZE = {
   bottomPx: 16,
@@ -136,29 +131,6 @@ export default function RootLayout({
           >
             <StrategyOverlay />
           </div>
-        {/* Right-side AityAahn wordmark, slightly below vertical center */}
-        <div
-          className="siteAityaahnOverlayWrapper"
-          style={
-            {
-              "--site-aityaahn-right": `${SITE_AITYAAHN_SIZE.rightPx}px`,
-              "--site-aityaahn-max-width": `${SITE_AITYAAHN_SIZE.maxWidthPx}px`,
-            } as CSSProperties
-          }
-        >
-          <ExternalLink
-            href={SITE_LINKS.overlays.aityUahn.href}
-            ariaLabel={SITE_LINKS.overlays.aityUahn.ariaLabel}
-            className="siteAityaahnOverlay"
-          >
-            <img
-              src="/hyperlinks/Assets/AityAahn.svg"
-              alt=""
-              width={317}
-              height={160}
-            />
-          </ExternalLink>
-        </div>
         {/* Bottom ad: image from public/hyperlinks/Assets/ad.svg */}
         <div
           className="siteAdOverlayWrapper"

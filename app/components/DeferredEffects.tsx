@@ -60,13 +60,13 @@ export default function DeferredEffects({ links }: { links: string[] }) {
     cleanups.push(
       whenIdle(() => {
         if (!cancelled) setShowBlackHole(true);
-      }, low ? 1200 : 500)
+      }, low ? 1800 : 800)
     );
 
     cleanups.push(
       whenIdle(() => {
         if (!cancelled) setShowStickers(true);
-      }, low ? 2800 : 1600)
+      }, low ? 3200 : 2000)
     );
 
     if (!coarse) {

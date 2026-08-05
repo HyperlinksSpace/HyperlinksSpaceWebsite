@@ -20,6 +20,12 @@ export type BlackHoleBody = {
 
 export type BlackHoleMode = "auto" | "manual";
 
+/** Normalized viewport position (0–1). Persisted until reset. */
+export type BlackHolePosition = {
+  xRatio: number;
+  yRatio: number;
+};
+
 export type BlackHoleSettings = {
   enabled: boolean;
   binary: boolean;
@@ -34,9 +40,11 @@ export type BlackHoleSettings = {
   sky: number;
   bh1: BlackHoleBody;
   bh2: BlackHoleBody;
+  /** User-dragged placement; null = auto layout under Strategy. */
+  position: BlackHolePosition | null;
 };
 
-const STORAGE_KEY = "hyperlinks-blackhole-v11";
+const STORAGE_KEY = "hyperlinks-blackhole-v12";
 
 export const DEFAULT_BLACK_HOLE: BlackHoleSettings = {
   enabled: true,
@@ -64,6 +72,7 @@ export const DEFAULT_BLACK_HOLE: BlackHoleSettings = {
     diskOuter: 4.8,
     hue: 210,
   },
+  position: null,
 };
 
 interface BlackHoleContextType {
@@ -83,6 +92,18 @@ function clampBody(body: BlackHoleBody): BlackHoleBody {
     diskInner: Math.min(2.2, Math.max(1.2, body.diskInner)),
     diskOuter: Math.min(9, Math.max(2.5, body.diskOuter)),
     hue: ((body.hue % 360) + 360) % 360,
+  };
+}
+
+function normalizePosition(raw: unknown): BlackHolePosition | null {
+  if (!raw || typeof raw !== "object") return null;
+  const p = raw as Partial<BlackHolePosition>;
+  const xRatio = Number(p.xRatio);
+  const yRatio = Number(p.yRatio);
+  if (!Number.isFinite(xRatio) || !Number.isFinite(yRatio)) return null;
+  return {
+    xRatio: Math.min(1, Math.max(0, xRatio)),
+    yRatio: Math.min(1, Math.max(0, yRatio)),
   };
 }
 
@@ -109,6 +130,7 @@ function normalize(raw: Partial<BlackHoleSettings> | null): BlackHoleSettings {
     ),
     bh1: clampBody({ ...DEFAULT_BLACK_HOLE.bh1, ...(base.bh1 ?? {}) }),
     bh2: clampBody({ ...DEFAULT_BLACK_HOLE.bh2, ...(base.bh2 ?? {}) }),
+    position: normalizePosition(base.position),
   };
 }
 
