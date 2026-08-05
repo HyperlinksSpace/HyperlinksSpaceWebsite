@@ -1,0 +1,752 @@
+"use client";
+
+import { useEffect, useRef } from "react";
+import {
+  DEFAULT_BLACK_HOLE,
+  useBlackHole,
+  type BlackHoleSettings,
+} from "./BlackHoleContext";
+
+/**
+ * Small binary BH + screen-wide lensing.
+ * Full-viewport canvas is click-through; a tiny handle is what you drag.
+ * Near-core: full ray march. Far field: cheap residual bend. Sharp DPR.
+ */
+
+const VERT = `#version 300 es
+in vec2 a_pos;
+out vec2 v_uv;
+void main() {
+  v_uv = a_pos * 0.5 + 0.5;
+  gl_Position = vec4(a_pos, 0.0, 1.0);
+}`;
+
+const FRAG = `#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+out vec4 fragColor;
+
+uniform vec2 u_res;
+uniform vec2 u_anchor; // screen center of binary in aspect-corrected uv (-aspect..aspect, -1..1)
+uniform float u_time;
+uniform float u_binary;
+uniform float u_sep;
+uniform float u_persp;
+uniform float u_glow;
+uniform float u_speed;
+uniform float u_sky;
+uniform float u_orbit;
+uniform float u_scale;
+uniform float u_quality;
+uniform float u_light;
+uniform float u_mobile; // 1 on phones — larger cores + stronger field
+uniform vec4 u_bh1;
+uniform vec4 u_bh2;
+uniform float u_hue1;
+uniform float u_hue2;
+uniform sampler2D u_noise;
+
+#define PI 3.14159265
+#define MAX_STEPS 120
+
+float ls(float x) { return abs(mod(x, 2.0) - 1.0); }
+float lsa(float x) { return abs(mod(x / PI, 2.0) - 1.0) * 2.0 - 1.0; }
+
+float hash21(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+
+float noise(vec2 p) {
+  return texture(u_noise, p / 96.0).r * 0.65
+       + texture(u_noise, p / 32.0).r * 0.35;
+}
+
+vec3 diskThermal(float t, float a, float dpl, float time) {
+  float hv = pow(max(t * t * (1.0 - t) * 6.75, 1e-6), 0.25);
+  float n = noise(vec2((t - time * 0.01) * 20.0, lsa(a + time) * 3.0)) * 2.0 - 1.0;
+  float t_noise = clamp(t * (1.0 - n) + n, 0.0, 1.0);
+  float d_factor = -dpl * 0.1 + 1.05;
+  float t_adjusted = t_noise * 1.5 / (t_noise * d_factor + 0.5) * hv;
+  float t_factor = t_adjusted * 0.5 + 0.5 * hv;
+  float t_half = t_adjusted * 0.5 + 0.4 * hv;
+  float t_pow5 = exp(5.0 * log(max(t_adjusted, 1e-5)));
+  float t_pow20 = exp(20.0 * log(max(t_adjusted, 1e-5)));
+  vec3 acol = vec3(t_half, t_pow5 * 0.6, t_pow20 * 0.3) * t_factor;
+  vec3 dcol = (1.0 - acol) * max(dpl, 0.0) * t_noise * hv *
+    pow(ls(t * 2.0 + 0.5), 4.0) * vec3(0.5, 0.6, 0.4);
+  return clamp(mix(acol + dcol, vec3(t, 0.0, 0.0), clamp(1.0 - t, 0.0, 1.0)) * 1.4, 0.0, 1.0);
+}
+
+vec3 tintDisk(vec3 thermal, float hueDeg) {
+  float h = mod(hueDeg, 360.0);
+  float cool = smoothstep(70.0, 130.0, h) * (1.0 - smoothstep(245.0, 305.0, h));
+  vec3 cold = clamp(thermal.zyx * vec3(0.5, 0.7, 1.4) + thermal.x * vec3(0.12, 0.32, 0.95), 0.0, 1.0);
+  return mix(thermal, cold, cool);
+}
+
+vec3 sky(vec3 rd) {
+  if (u_sky <= 0.001) return vec3(0.0);
+  vec3 d = normalize(rd);
+  float lat = d.y;
+  float lon = atan(d.z, d.x);
+  float band = exp(-pow((lat - 0.06 * sin(lon * 2.4 + u_time * 0.15)) * 3.0, 2.0));
+  vec3 dustDark = vec3(0.02, 0.025, 0.045) + vec3(0.08, 0.05, 0.03) * band;
+  // Light theme: soft white / pearl field around the holes (not bleaching the disks)
+  vec3 dustLight = vec3(0.72, 0.82, 0.9) * 0.14 + vec3(0.5, 0.7, 0.65) * 0.08 * band;
+  vec3 dust = mix(dustDark, dustLight, u_light);
+  dust += mix(vec3(0.03, 0.035, 0.06), vec3(0.1, 0.14, 0.16), u_light)
+        * (texture(u_noise, vec2(lon, lat) * 0.4 + u_time * 0.01).r - 0.2);
+
+  vec2 sp = vec2(lon, lat) * 110.0;
+  vec2 g = floor(sp);
+  float h = hash21(g);
+  vec2 p = g + vec2(hash21(g + 17.1), hash21(g + 91.7));
+  float star = pow(h, 15.0) * smoothstep(0.05, 0.0, length(sp - p));
+  vec3 starDark = vec3(0.9, 0.93, 1.0);
+  vec3 starLight = vec3(0.55, 0.75, 0.95);
+  vec3 starCol = mix(starDark, starLight, u_light);
+  return (dust * (0.4 + band * 1.15) + starCol * star * mix(1.6, 1.5, u_light)) * u_sky;
+}
+
+vec3 bendResidual(vec3 ro, vec3 rd, vec3 p, float rs) {
+  vec3 w = ro - p;
+  float s = dot(w, rd);
+  vec3 wp = w - rd * s;
+  float b = max(length(wp), rs);
+  float r = sqrt(b * b + s * s);
+  float a = (rs / b) * (1.0 - s / max(r, 1.0));
+  return normalize(rd - (wp / b) * a);
+}
+
+vec3 skyFar(vec3 ro, vec3 rd, vec3 p1, float r1, vec3 p2, float r2, float binary) {
+  rd = bendResidual(ro, rd, p1, r1);
+  if (binary > 0.5) rd = bendResidual(ro, rd, p2, r2);
+  return sky(rd);
+}
+
+vec3 bend(vec3 ro, vec3 rd, vec3 p, float rs, vec3 axis, float spin) {
+  vec3 r = ro - p;
+  float r2 = max(dot(r, r), 1e-8);
+  float r1 = inversesqrt(r2);
+  vec3 L = cross(r, rd);
+  return -1.5 * rs * (r * dot(L, L)) * (r1 / (r2 * r2))
+       + cross(axis, r) * spin * rs * 2.6 * r1 / r2;
+}
+
+void advance(
+  inout vec3 o, inout vec3 d, float h,
+  vec3 p1, float r1, vec3 a1, float s1,
+  vec3 p2, float r2, vec3 a2, float s2,
+  float binary
+) {
+  vec3 aA = bend(o, d, p1, r1, a1, s1);
+  if (binary > 0.5) aA += bend(o, d, p2, r2, a2, s2);
+  vec3 dm = normalize(d + aA * (h * 0.5));
+  vec3 om = o + dm * (h * 0.5);
+  vec3 aB = bend(om, dm, p1, r1, a1, s1);
+  if (binary > 0.5) aB += bend(om, dm, p2, r2, a2, s2);
+  d = normalize(d + aB * h);
+  o += d * h;
+}
+
+bool hitDisk(
+  vec3 oro, vec3 ro, vec3 rd,
+  vec3 center, vec3 axis, vec3 u, vec3 v,
+  float innerR, float outerR, float angleOffset,
+  float hue, float time, inout vec3 col
+) {
+  float s1 = dot(oro - center, axis);
+  float s2 = dot(ro - center, axis);
+  if (s1 * s2 >= 0.0) return false;
+  float tHit = s1 / (s1 - s2);
+  if (tHit < 0.0 || tHit > 1.0) return false;
+  vec3 p = mix(oro, ro, tHit);
+  vec3 rel = p - center;
+  vec3 radial = rel - axis * dot(rel, axis);
+  float r = length(radial);
+  if (r < innerR || r > outerR) return false;
+  float x = dot(radial, u);
+  float y = dot(radial, v);
+  float angle = atan(y, x) + angleOffset;
+  float temp = 1.0 - (r - innerR) / max(outerR - innerR, 1e-5);
+  vec3 rl = normalize(radial);
+  vec3 tg = normalize(cross(axis, rl));
+  float dop = dot(tg, rd);
+  col = tintDisk(diskThermal(temp, angle, -dop, time), hue);
+  return true;
+}
+
+vec2 project(vec3 p, vec3 ro, vec3 uu, vec3 vv, vec3 ww, float fov) {
+  vec3 to = p - ro;
+  float z = max(dot(to, ww), 0.05);
+  return vec2(dot(to, uu), dot(to, vv)) / (z * fov);
+}
+
+vec4 trace(
+  vec3 ro, vec3 rd,
+  vec3 p1, float r1, float s1, float i1, float o1, float hue1, vec3 a1, vec3 u1, vec3 v1,
+  vec3 p2, float r2, float s2, float i2, float o2, float hue2, vec3 a2, vec3 u2, vec3 v2,
+  float binary, float time, int limit
+) {
+  float C1 = r1 * 1.5;
+  float C2 = r2 * 1.5;
+  vec3 acc = vec3(0.0);
+
+  for (int i = 0; i < MAX_STEPS; i++) {
+    if (i >= limit) break;
+    float d1 = length(ro - p1);
+    float d2 = binary > 0.5 ? length(ro - p2) : 1e9;
+
+    if (d1 < C1 || d2 < C2) {
+      // Opaque horizon: black void / white hole core only
+      vec3 core = mix(vec3(0.0), vec3(0.99, 0.995, 1.0), u_light);
+      return vec4(core, 1.0);
+    }
+
+    if (d1 > 110.0 && d2 > 110.0) {
+      vec3 far = skyFar(ro, rd, p1, r1, p2, r2, binary);
+      acc += far;
+      float a = clamp(max(max(acc.r, acc.g), acc.b) * 1.05, 0.0, 0.55);
+      return vec4(acc, a);
+    }
+
+    vec3 oro = ro;
+    float h1 = d1 / (3.0 * r1);
+    float h2 = d2 / (3.0 * max(r2, 1e-4));
+    float h = (h1 * h2) / (h1 + h2);
+    h = clamp(h, 0.012, 2.3);
+    advance(ro, rd, h, p1, r1, a1, s1, p2, r2, a2, s2, binary);
+
+    vec3 c;
+    if (hitDisk(oro, ro, rd, p1, a1, u1, v1, i1, o1, 0.0, hue1, time, c)) {
+      acc += c;
+      return vec4(clamp(acc, 0.0, 1.0), 1.0);
+    }
+    if (binary > 0.5 && hitDisk(oro, ro, rd, p2, a2, u2, v2, i2, o2, -1.5, hue2, time, c)) {
+      acc += c;
+      return vec4(clamp(acc, 0.0, 1.0), 1.0);
+    }
+  }
+
+  vec3 far = skyFar(ro, rd, p1, r1, p2, r2, binary);
+  acc += far;
+  float a = clamp(max(max(acc.r, acc.g), acc.b) * 1.0, 0.0, 0.5);
+  return vec4(acc, a);
+}
+
+void main() {
+  float aspect = u_res.x / max(u_res.y, 1.0);
+  vec2 uv = (v_uv - 0.5) * 2.0;
+  uv.x *= aspect;
+  // BH follows drag handle across the screen
+  uv -= u_anchor;
+
+  float time = u_time * u_speed;
+  // Smaller holes on desktop; on mobile bump scale so cores stay readable
+  float scale = clamp(u_scale * mix(1.0, 1.35, u_mobile), 0.35, 1.35);
+
+  float R1 = mix(0.85, 1.7, clamp((u_bh1.x - 0.08) / 0.34, 0.0, 1.0));
+  float R2 = mix(0.65, 1.35, clamp((u_bh2.x - 0.08) / 0.34, 0.0, 1.0));
+  float sep = mix(4.5, 9.5, clamp((u_sep - 0.35) / 0.8, 0.0, 1.0));
+  // Living orbit — breathe separation
+  sep *= 0.88 + 0.14 * sin(time * 0.37);
+  if (u_binary < 0.5) {
+    sep = 0.0;
+    R1 = max(R1, 1.2);
+  }
+
+  float ang = time * u_orbit;
+  float ca = cos(ang);
+  float sa = sin(ang);
+  vec3 P1 = vec3(ca * (-sep * 0.5), 0.12 * sin(time * 0.55), sa * (-sep * 0.5));
+  vec3 P2 = vec3(ca * ( sep * 0.5), -0.1 * sin(time * 0.61 + 0.7), sa * ( sep * 0.5));
+
+  float I1 = R1 * max(u_bh1.z, 1.35);
+  float O1 = R1 * max(u_bh1.w, I1 / R1 + 1.1);
+  float I2 = R2 * max(u_bh2.z, 1.35);
+  float O2 = R2 * max(u_bh2.w, I2 / R2 + 1.1);
+  float S1 = clamp(u_bh1.y, -1.8, 1.8);
+  float S2 = clamp(u_bh2.y, -1.8, 1.8);
+
+  float pre = time * 0.14;
+  vec3 A1 = normalize(vec3(0.14 * cos(pre), 0.96, 0.16 * sin(pre * 1.3)));
+  vec3 A2 = normalize(vec3(-0.12 * cos(pre * 1.2), 0.97, -0.14 * sin(pre * 1.15)));
+  vec3 U1 = normalize(cross(A1, vec3(0.0, 0.0, 1.0)));
+  vec3 V1 = cross(A1, U1);
+  vec3 U2 = normalize(cross(A2, vec3(0.0, 0.0, 1.0)));
+  vec3 V2 = cross(A2, U2);
+
+  float camDist = mix(58.0, 34.0, clamp((u_persp - 0.7) / 1.3, 0.0, 1.0));
+  vec3 ro = vec3(0.0, camDist * 0.05, camDist);
+  vec3 ww = normalize(-ro);
+  vec3 uu = normalize(cross(ww, vec3(0.0, 1.0, 0.0)));
+  vec3 vv = cross(uu, ww);
+  float fov = 0.95 / scale;
+  vec3 rd = normalize(uu * uv.x * fov + vv * uv.y * fov + ww);
+
+  vec2 s1 = project(P1, ro, uu, vv, ww, fov);
+  vec2 s2 = project(P2, ro, uu, vv, ww, fov);
+  float dNear = length(uv - s1);
+  if (u_binary > 0.5) dNear = min(dNear, length(uv - s2));
+  float diskSpan = max(O1, O2) / max(camDist * fov, 1.0);
+
+  // Far field: cheap lensed sky — keeps the whole screen alive without heavy march
+  if (dNear > diskSpan * 2.6) {
+    vec3 far = skyFar(ro, rd, P1, R1, P2, R2, u_binary);
+    float fall = exp(-dNear * mix(0.55, 0.38, u_mobile));
+    float aMax = mix(0.28, 0.42, u_mobile);
+    float a = clamp(max(max(far.r, far.g), far.b) * mix(0.85, 1.15, u_mobile), 0.0, aMax) * fall;
+    a *= 0.55 + 0.45 * u_sky;
+    fragColor = vec4(far * a, a);
+    return;
+  }
+
+  int limit = int(mix(72.0, float(MAX_STEPS), u_quality));
+  if (dNear > diskSpan * 1.2) limit = int(float(limit) * 0.62);
+
+  vec4 hit = trace(
+    ro, rd,
+    P1, R1, S1, I1, O1, u_hue1, A1, U1, V1,
+    P2, R2, S2, I2, O2, u_hue2, A2, U2, V2,
+    u_binary, time, limit
+  );
+
+  // Disks keep full thermal color; only the field around them is white on light theme
+  vec3 col = hit.rgb * mix(0.95, 1.55, clamp(u_glow, 0.4, 2.0) / 2.0);
+  col = clamp(col / (col * 0.26 + 0.74), 0.0, 1.0);
+
+  float core = smoothstep(diskSpan * 1.4, diskSpan * 0.35, dNear);
+  float alpha = hit.a * mix(mix(0.55, 0.7, u_mobile), 1.0, core);
+  fragColor = vec4(col * alpha, alpha);
+}`;
+
+function compile(gl: WebGL2RenderingContext, type: number, src: string) {
+  const sh = gl.createShader(type);
+  if (!sh) return null;
+  gl.shaderSource(sh, src);
+  gl.compileShader(sh);
+  if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+    console.warn(gl.getShaderInfoLog(sh));
+    gl.deleteShader(sh);
+    return null;
+  }
+  return sh;
+}
+
+function link(gl: WebGL2RenderingContext, vs: WebGLShader, fsSrc: string) {
+  const fs = compile(gl, gl.FRAGMENT_SHADER, fsSrc);
+  if (!fs) return null;
+  const prog = gl.createProgram();
+  if (!prog) {
+    gl.deleteShader(fs);
+    return null;
+  }
+  gl.attachShader(prog, vs);
+  gl.attachShader(prog, fs);
+  gl.linkProgram(prog);
+  gl.deleteShader(fs);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+    console.warn(gl.getProgramInfoLog(prog));
+    gl.deleteProgram(prog);
+    return null;
+  }
+  return prog;
+}
+
+function makeNoiseTexture(gl: WebGL2RenderingContext) {
+  const size = 64;
+  const data = new Uint8Array(size * size * 4);
+  for (let i = 0; i < size * size; i++) {
+    const v = (Math.random() * 255) | 0;
+    const o = i * 4;
+    data[o] = v;
+    data[o + 1] = v;
+    data[o + 2] = v;
+    data[o + 3] = 255;
+  }
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, size, size, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+  return tex;
+}
+
+function autoParams(base: BlackHoleSettings, t: number): BlackHoleSettings {
+  return {
+    ...base,
+    separation: 0.58 + 0.28 * (0.5 + 0.5 * Math.sin(t * 0.19)),
+    perspective: 0.95 + 0.35 * (0.5 + 0.5 * Math.sin(t * 0.11 + 0.8)),
+    glow: 1.05 + 0.45 * (0.5 + 0.5 * Math.sin(t * 0.23 + 0.4)),
+    sky: 0.45 + 0.4 * (0.5 + 0.5 * Math.sin(t * 0.09 + 1.7)),
+    speed: base.speed,
+    bh1: {
+      ...base.bh1,
+      radius: DEFAULT_BLACK_HOLE.bh1.radius,
+      spin: 0.7 + 0.85 * Math.sin(t * 0.27),
+      hue: (12 + 48 * (0.5 + 0.5 * Math.sin(t * 0.07))) % 360,
+      diskInner: 1.5,
+      diskOuter: 4.2 + 2.8 * (0.5 + 0.5 * Math.sin(t * 0.15 + 0.5)),
+    },
+    bh2: {
+      ...base.bh2,
+      radius: DEFAULT_BLACK_HOLE.bh2.radius,
+      spin: -0.55 - 0.9 * Math.sin(t * 0.31 + 1.1),
+      hue: (175 + 70 * (0.5 + 0.5 * Math.sin(t * 0.08 + 1.2))) % 360,
+      diskInner: 1.5,
+      diskOuter: 3.8 + 2.4 * (0.5 + 0.5 * Math.sin(t * 0.17 + 1.4)),
+    },
+  };
+}
+
+export default function FloatingBlackHole() {
+  const { settings, panelOpen } = useBlackHole();
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const handleRef = useRef<HTMLDivElement>(null);
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
+  const panelOpenRef = useRef(panelOpen);
+  panelOpenRef.current = panelOpen;
+  const posRef = useRef({ x: 0, y: 0, ready: false });
+  const dragRef = useRef({ active: false, ox: 0, oy: 0 });
+
+  // When settings sheet opens on mobile, park BH in the upper clear zone
+  useEffect(() => {
+    const handle = handleRef.current;
+    if (!handle) return;
+    const mobile =
+      window.matchMedia("(pointer: coarse)").matches || window.innerWidth <= 640;
+    if (!mobile || !panelOpen) return;
+    const vv = window.visualViewport;
+    const h = Math.floor(vv?.height ?? window.innerHeight);
+    const hs = handle.offsetWidth || 64;
+    const maxY = Math.max(16, h * 0.28 - hs);
+    if (posRef.current.y > maxY) {
+      posRef.current.y = maxY;
+      handle.style.transform = `translate3d(${posRef.current.x}px, ${posRef.current.y}px, 0)`;
+    }
+  }, [panelOpen]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const handle = handleRef.current;
+    if (!canvas || !handle) return;
+
+    const gl = canvas.getContext("webgl2", {
+      alpha: true,
+      antialias: true,
+      premultipliedAlpha: true,
+      powerPreference: "high-performance",
+    });
+    if (!gl) return;
+
+    const vs = compile(gl, gl.VERTEX_SHADER, VERT);
+    if (!vs) return;
+    const prog = link(gl, vs, FRAG);
+    if (!prog) return;
+
+    const buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]),
+      gl.STATIC_DRAW
+    );
+    const loc = gl.getAttribLocation(prog, "a_pos");
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    gl.useProgram(prog);
+
+    const noiseTex = makeNoiseTexture(gl);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, noiseTex);
+
+    const uni = {
+      res: gl.getUniformLocation(prog, "u_res"),
+      anchor: gl.getUniformLocation(prog, "u_anchor"),
+      time: gl.getUniformLocation(prog, "u_time"),
+      binary: gl.getUniformLocation(prog, "u_binary"),
+      sep: gl.getUniformLocation(prog, "u_sep"),
+      persp: gl.getUniformLocation(prog, "u_persp"),
+      glow: gl.getUniformLocation(prog, "u_glow"),
+      speed: gl.getUniformLocation(prog, "u_speed"),
+      sky: gl.getUniformLocation(prog, "u_sky"),
+      orbit: gl.getUniformLocation(prog, "u_orbit"),
+      scale: gl.getUniformLocation(prog, "u_scale"),
+      quality: gl.getUniformLocation(prog, "u_quality"),
+      light: gl.getUniformLocation(prog, "u_light"),
+      mobile: gl.getUniformLocation(prog, "u_mobile"),
+      bh1: gl.getUniformLocation(prog, "u_bh1"),
+      bh2: gl.getUniformLocation(prog, "u_bh2"),
+      hue1: gl.getUniformLocation(prog, "u_hue1"),
+      hue2: gl.getUniformLocation(prog, "u_hue2"),
+      noise: gl.getUniformLocation(prog, "u_noise"),
+    };
+    gl.uniform1i(uni.noise, 0);
+
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+
+    const low =
+      window.matchMedia("(pointer: coarse)").matches ||
+      window.innerWidth <= 768 ||
+      ((navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 8) <= 4;
+    const mobile =
+      window.matchMedia("(pointer: coarse)").matches || window.innerWidth <= 768;
+
+    const isLightTheme = () =>
+      document.documentElement.getAttribute("data-theme") === "light";
+
+    let raf = 0;
+    let start = performance.now();
+    let pausedAt = 0;
+    let visible = !document.hidden;
+    let needsResize = true;
+    let lightMode = isLightTheme() ? 1 : 0;
+    let pausedDrawn = false;
+    let emaDt = 16.6;
+    let lastFrame = performance.now();
+    let renderScale = 1;
+    let lastW = 0;
+    let lastH = 0;
+
+    const viewSize = () => {
+      const vv = window.visualViewport;
+      return {
+        w: Math.max(1, Math.floor(vv?.width ?? window.innerWidth)),
+        h: Math.max(1, Math.floor(vv?.height ?? window.innerHeight)),
+      };
+    };
+
+    const placeHandleDefault = () => {
+      if (posRef.current.ready) return;
+      const { w, h } = viewSize();
+      const hs = handle.offsetWidth || (mobile ? 64 : 56);
+      // Mobile: mid-left so cores stay on-screen at any aspect
+      posRef.current.x = Math.max(8, w * (mobile ? 0.14 : 0.06));
+      posRef.current.y = mobile
+        ? Math.max(24, h * 0.42 - hs * 0.5)
+        : h - Math.max(110, h * 0.2) - hs;
+      posRef.current.ready = true;
+      handle.style.transform = `translate3d(${posRef.current.x}px, ${posRef.current.y}px, 0)`;
+    };
+
+    const resize = () => {
+      const { w: cssW, h: cssH } = viewSize();
+      const dprCap = low ? 1.75 : 2;
+      const dpr = Math.min(window.devicePixelRatio || 1, dprCap) * renderScale;
+      let w = Math.max(1, Math.floor(cssW * dpr));
+      let h = Math.max(1, Math.floor(cssH * dpr));
+      const maxPix = low ? 2.2e6 : 4.0e6;
+      if (w * h > maxPix) {
+        const s = Math.sqrt(maxPix / (w * h));
+        w = Math.max(1, Math.floor(w * s));
+        h = Math.max(1, Math.floor(h * s));
+      }
+      if (w !== lastW || h !== lastH) {
+        canvas.width = w;
+        canvas.height = h;
+        gl.viewport(0, 0, w, h);
+        lastW = w;
+        lastH = h;
+      }
+      canvas.style.width = `${cssW}px`;
+      canvas.style.height = `${cssH}px`;
+      needsResize = false;
+      pausedDrawn = false;
+      placeHandleDefault();
+    };
+
+    const anchorFromPos = () => {
+      const { w, h } = viewSize();
+      const hs = handle.offsetWidth || (mobile ? 64 : 56);
+      const cx = posRef.current.x + hs * 0.5;
+      const cy = posRef.current.y + hs * 0.5;
+      const aspect = w / Math.max(h, 1);
+      const nx = ((cx / w) * 2 - 1) * aspect;
+      const ny = -((cy / h) * 2 - 1);
+      return [nx, ny] as const;
+    };
+
+    const onResize = () => {
+      needsResize = true;
+    };
+    window.addEventListener("resize", onResize, { passive: true });
+    window.visualViewport?.addEventListener("resize", onResize, { passive: true });
+    window.visualViewport?.addEventListener("scroll", onResize, { passive: true });
+
+    const draw = (now: number) => {
+      const base = settingsRef.current;
+      if (!visible || !base.enabled) {
+        raf = requestAnimationFrame(draw);
+        return;
+      }
+
+      const dt = now - lastFrame;
+      lastFrame = now;
+      if (dt > 0 && dt < 80) {
+        emaDt = emaDt * 0.9 + dt * 0.1;
+        // Prefer sharpness; only ease scale if we miss 60fps hard
+        if (emaDt > 22 && renderScale > 0.88) {
+          renderScale = Math.max(0.88, renderScale * 0.98);
+          needsResize = true;
+        } else if (emaDt < 15 && renderScale < 1) {
+          renderScale = Math.min(1, renderScale * 1.015);
+          needsResize = true;
+        }
+      }
+
+      if (needsResize) resize();
+
+      let t = (now - start) / 1000;
+      if (!base.play) {
+        if (!pausedAt) pausedAt = t;
+        t = pausedAt;
+        if (pausedDrawn) {
+          raf = requestAnimationFrame(draw);
+          return;
+        }
+      } else if (pausedAt) {
+        start = now - pausedAt * 1000;
+        pausedAt = 0;
+        t = (now - start) / 1000;
+        pausedDrawn = false;
+      }
+
+      const s = base.mode === "auto" ? autoParams(base, t) : base;
+      // Larger baseline on mobile so singularities stay visible at any aspect
+      const scale = mobile
+        ? 0.58 + ((s.size - 160) / 160) * 0.5
+        : 0.42 + ((s.size - 160) / 160) * 0.55;
+      const [ax, ay] = anchorFromPos();
+
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.uniform2f(uni.res, canvas.width, canvas.height);
+      gl.uniform2f(uni.anchor, ax, ay);
+      gl.uniform1f(uni.time, t);
+      gl.uniform1f(uni.binary, s.binary ? 1 : 0);
+      gl.uniform1f(uni.sep, s.separation);
+      gl.uniform1f(uni.persp, s.perspective);
+      gl.uniform1f(uni.glow, s.glow);
+      gl.uniform1f(uni.speed, s.speed);
+      gl.uniform1f(uni.sky, s.sky);
+      gl.uniform1f(uni.orbit, s.mode === "auto" ? 0.22 : 0.14);
+      gl.uniform1f(uni.scale, scale);
+      gl.uniform1f(uni.quality, low ? 0.85 : 1);
+      gl.uniform1f(uni.light, lightMode);
+      gl.uniform1f(uni.mobile, mobile ? 1 : 0);
+      gl.uniform4f(uni.bh1, s.bh1.radius, s.bh1.spin, s.bh1.diskInner, s.bh1.diskOuter);
+      gl.uniform4f(uni.bh2, s.bh2.radius, s.bh2.spin, s.bh2.diskInner, s.bh2.diskOuter);
+      gl.uniform1f(uni.hue1, s.bh1.hue);
+      gl.uniform1f(uni.hue2, s.bh2.hue);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+      if (!base.play) pausedDrawn = true;
+      raf = requestAnimationFrame(draw);
+    };
+
+    placeHandleDefault();
+    resize();
+    raf = requestAnimationFrame(draw);
+
+    const onVis = () => {
+      visible = !document.hidden;
+      if (visible) pausedDrawn = false;
+    };
+    document.addEventListener("visibilitychange", onVis);
+
+    const themeMo = new MutationObserver(() => {
+      const next = isLightTheme() ? 1 : 0;
+      if (next !== lightMode) {
+        lightMode = next;
+        pausedDrawn = false;
+      }
+    });
+    themeMo.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
+
+    const onMove = (e: PointerEvent) => {
+      if (!dragRef.current.active) return;
+      e.preventDefault();
+      const { w, h } = viewSize();
+      const hs = handle.offsetWidth || (mobile ? 64 : 56);
+      let x = e.clientX - dragRef.current.ox;
+      let y = e.clientY - dragRef.current.oy;
+      x = Math.max(4, Math.min(w - hs - 4, x));
+      // Keep clear of the bottom settings sheet when it's open
+      const sheetTop = panelOpenRef.current && mobile ? h * 0.38 : h - hs - 4;
+      y = Math.max(4, Math.min(sheetTop, y));
+      posRef.current.x = x;
+      posRef.current.y = y;
+      handle.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+    };
+    const onUp = (e: PointerEvent) => {
+      if (!dragRef.current.active) return;
+      dragRef.current.active = false;
+      handle.classList.remove("is-dragging");
+      try {
+        handle.releasePointerCapture(e.pointerId);
+      } catch {
+        /* ignore */
+      }
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+    const onDown = (e: PointerEvent) => {
+      if (e.button !== 0 && e.pointerType === "mouse") return;
+      e.preventDefault();
+      e.stopPropagation();
+      dragRef.current.active = true;
+      dragRef.current.ox = e.clientX - posRef.current.x;
+      dragRef.current.oy = e.clientY - posRef.current.y;
+      handle.classList.add("is-dragging");
+      try {
+        handle.setPointerCapture(e.pointerId);
+      } catch {
+        /* ignore */
+      }
+      window.addEventListener("pointermove", onMove, { passive: false });
+      window.addEventListener("pointerup", onUp);
+      window.addEventListener("pointercancel", onUp);
+    };
+    handle.addEventListener("pointerdown", onDown);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", onResize);
+      window.visualViewport?.removeEventListener("resize", onResize);
+      window.visualViewport?.removeEventListener("scroll", onResize);
+      document.removeEventListener("visibilitychange", onVis);
+      themeMo.disconnect();
+      handle.removeEventListener("pointerdown", onDown);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+      gl.deleteTexture(noiseTex);
+      gl.deleteProgram(prog);
+      gl.deleteShader(vs);
+      gl.deleteBuffer(buf);
+    };
+  }, []);
+
+  if (!settings.enabled) return null;
+
+  return (
+    <>
+      <canvas ref={canvasRef} className="floatingBlackHoleCanvas" aria-hidden="true" />
+      <div
+        ref={handleRef}
+        className="bhDragHandle"
+        aria-label="Drag black holes"
+        title="Drag"
+      />
+    </>
+  );
+}

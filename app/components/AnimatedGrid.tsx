@@ -52,7 +52,7 @@ export default function AnimatedGrid({ children }: { children: React.ReactNode }
 
     const scheduleNext = () => {
       if (cancelled) return;
-      const delay = Math.random() * 1800 + 1800;
+      const delay = Math.random() * 2800 + 3200;
       timeoutId = setTimeout(() => {
         if (cancelled) return;
         updateGrid();
@@ -79,7 +79,7 @@ export default function AnimatedGrid({ children }: { children: React.ReactNode }
 
     const scheduleNext = () => {
       if (cancelled) return;
-      const delay = Math.random() * 2200 + 2200;
+      const delay = Math.random() * 3500 + 4000;
       timeoutId = setTimeout(() => {
         if (cancelled) return;
         shufflePositions();

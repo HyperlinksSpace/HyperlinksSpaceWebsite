@@ -174,7 +174,7 @@ export default function MeltingSVG({
 
     // Setup Three.js scene
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xffffff);
+    scene.background = new THREE.Color(0x060908);
     sceneRef.current = scene;
 
     const camera = new THREE.OrthographicCamera(
@@ -198,7 +198,7 @@ export default function MeltingSVG({
       uTime: { value: 0 },
       uMeltIntensity: { value: 20.0 },
       uNoiseScale: { value: 0.01 },
-      uColor: { value: new THREE.Color(0x000000) },
+      uColor: { value: new THREE.Color(0x00d65a) },
     };
 
     const material = new THREE.ShaderMaterial({

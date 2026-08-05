@@ -7,11 +7,17 @@ import ViewportFix from "./components/ViewportFix";
 import DeferredEffects from "./components/DeferredEffects";
 import ExternalLink from "./components/ExternalLink";
 import LanguageSwitcher from "./components/LanguageSwitcher";
+import ThemeSwitcher from "./components/ThemeSwitcher";
+import SiteSettings from "./components/SiteSettings";
 import LogoOverlay from "./components/LogoOverlay";
 import StrategyOverlay from "./components/StrategyOverlay";
 import { LanguageProvider } from "./components/LanguageContext";
+import { ThemeProvider } from "./components/ThemeContext";
+import { BlackHoleProvider } from "./components/BlackHoleContext";
 import { getStickerLinks, SITE_LINKS } from "./siteLinks";
 import "./globals.css";
+
+const themeInitScript = `(function(){try{var k='hyperlinks-theme';var t=localStorage.getItem(k);var dark=t==='dark'||(t!=='light'&&window.matchMedia('(prefers-color-scheme: dark)').matches);var r=dark?'dark':'light';var p=(t==='light'||t==='dark')?t:'system';document.documentElement.setAttribute('data-theme',r);document.documentElement.setAttribute('data-theme-pref',p);}catch(e){}})();`;
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -73,8 +79,9 @@ export default function RootLayout({
   const stickerLinks = getStickerLinks();
 
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
         {[1, 2, 3, 4].map((n) => (
           <link
             key={n}
@@ -97,6 +104,8 @@ export default function RootLayout({
         className={`${geistSans.variable} antialiased`}
       >
         <LanguageProvider>
+          <ThemeProvider>
+          <BlackHoleProvider>
           <ViewportFix />
           <DeferredEffects links={stickerLinks} />
           {/* Bouncing stickers + cursor effects (deferred) */}
@@ -173,10 +182,13 @@ export default function RootLayout({
             />
           </ExternalLink>
         </div>
-          {/* Language switcher at bottom left corner */}
+          <SiteSettings />
+          <ThemeSwitcher />
           <LanguageSwitcher />
           {children}
           <Analytics />
+          </BlackHoleProvider>
+          </ThemeProvider>
         </LanguageProvider>
       </body>
     </html>

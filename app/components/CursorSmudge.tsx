@@ -2,6 +2,12 @@
 
 import { useEffect, useRef } from "react";
 
+interface TrailPoint {
+  x: number;
+  y: number;
+  time: number;
+  intensity: number;
+}
 
 interface Ripple {
   x: number;
@@ -9,15 +15,7 @@ interface Ripple {
   startTime: number;
   radius: number;
   intensity: number;
-}
-
-interface TrailPoint {
-  x: number;
-  y: number;
-  time: number;
-  intensity: number;
-  vx: number;
-  vy: number;
+  hue: number;
 }
 
 interface Particle {
@@ -28,658 +26,361 @@ interface Particle {
   life: number;
   maxLife: number;
   size: number;
-  trajectory: 'straight' | 'orbital';
-  centerX?: number;
-  centerY?: number;
-  angle?: number;
-  radius?: number;
-  angularVelocity?: number;
-  type?: 'normal' | 'higgs';
+  hue: number;
+}
+
+/** Discrete brand triad — no yellow wash from hue lerps */
+const BRAND = {
+  green: 145,
+  orange: 28,
+  blue: 215,
+} as const;
+
+const BRAND_LIST = [BRAND.green, BRAND.orange, BRAND.blue] as const;
+
+type Paint = {
+  dark: boolean;
+  sat: number;
+  light: number;
+  alphaMul: number;
+  fade: string;
+  blend: GlobalCompositeOperation;
+};
+
+function resolvePaint(): Paint {
+  if (typeof document === "undefined") {
+    return {
+      dark: false,
+      sat: 96,
+      light: 52,
+      alphaMul: 1,
+      fade: "rgba(242, 250, 245, 0.18)",
+      blend: "multiply",
+    };
+  }
+  const dark =
+    document.documentElement.getAttribute("data-theme") === "dark";
+  return dark
+    ? {
+        dark: true,
+        sat: 100,
+        light: 62,
+        alphaMul: 1.15,
+        fade: "rgba(4, 7, 6, 0.22)",
+        blend: "screen",
+      }
+    : {
+        dark: false,
+        sat: 96,
+        light: 48,
+        alphaMul: 1,
+        fade: "rgba(242, 250, 245, 0.2)",
+        blend: "multiply",
+      };
+}
+
+function brandHue(t: number, salt = 0): number {
+  // Slow discrete cycle (~2.2s per hue) — no yellow mid-lerp
+  const idx = Math.floor(t * 0.45 + salt) % 3;
+  return BRAND_LIST[(idx + 3) % 3];
+}
+
+function hs(
+  hue: number,
+  a: number,
+  paint: Paint
+): string {
+  return `hsla(${hue}, ${paint.sat}%, ${paint.light}%, ${Math.min(1, a * paint.alphaMul)})`;
 }
 
 export default function CursorSmudge() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const animationFrameRef = useRef<number | null>(null);
-  const mousePosRef = useRef({ x: 0, y: 0 });
-  const trailsRef = useRef<TrailPoint[]>([]);
-  const lastMousePosRef = useRef({ x: 0, y: 0 });
-  const timeRef = useRef(0);
-  const cursorSizeRef = useRef(150);
-  const bodyRef = useRef<HTMLBodyElement | null>(null);
-  const ripplesRef = useRef<Ripple[]>([]);
-  const particlesRef = useRef<Particle[]>([]);
-  const isMobileRef = useRef(false);
-  const randomMovementRef = useRef<{ x: number; y: number; targetX: number; targetY: number; lastMove: number } | null>(null);
-  const lastParticleSpawnRef = useRef(0);
-  const lastHiggsSpawnRef = useRef(0);
 
   useEffect(() => {
-    // Detect mobile device
-    isMobileRef.current = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
-                          (typeof window !== 'undefined' && window.innerWidth <= 768);
-    
-    // Get body element to apply gravity lens transform
-    bodyRef.current = document.body as HTMLBodyElement;
-    
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const ctx = canvas.getContext("2d", { alpha: true });
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduced) return;
+
+    const isCoarse =
+      window.matchMedia("(pointer: coarse)").matches || window.innerWidth <= 768;
+
+    const ctx = canvas.getContext("2d", {
+      alpha: true,
+      desynchronized: true,
+    });
     if (!ctx) return;
-    
-    // Initialize random movement for mobile
-    if (isMobileRef.current) {
-      randomMovementRef.current = {
-        x: window.innerWidth / 2,
-        y: window.innerHeight / 2,
-        targetX: window.innerWidth / 2,
-        targetY: window.innerHeight / 2,
-        lastMove: Date.now(),
-      };
-      mousePosRef.current = { x: randomMovementRef.current.x, y: randomMovementRef.current.y };
-    }
-    
-    // Helper function to calculate cursor size based on orientation
-    const updateCursorSize = () => {
-      if (typeof window === 'undefined') return;
-      const isPortrait = window.innerHeight > window.innerWidth;
-      cursorSizeRef.current = isPortrait ? window.innerWidth / 3 : window.innerHeight / 3;
-    };
 
-    // Set canvas size
-    const resizeCanvas = () => {
-      const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-      canvas.width = Math.floor(window.innerWidth * dpr);
-      canvas.height = Math.floor(window.innerHeight * dpr);
-      canvas.style.width = `${window.innerWidth}px`;
-      canvas.style.height = `${window.innerHeight}px`;
+    let paint = resolvePaint();
+    canvas.style.mixBlendMode = paint.blend;
+
+    const trails: TrailPoint[] = [];
+    const ripples: Ripple[] = [];
+    const particles: Particle[] = [];
+    const mouse = { x: -1, y: -1 };
+    let cursorR = 72;
+    let raf = 0;
+    let lastRipple = 0;
+    let lastParticle = 0;
+    let running = true;
+    let t = 0;
+
+    const resize = () => {
+      const dpr = Math.min(window.devicePixelRatio || 1, 1.25);
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      canvas.width = Math.floor(w * dpr);
+      canvas.height = Math.floor(h * dpr);
+      canvas.style.width = `${w}px`;
+      canvas.style.height = `${h}px`;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      updateCursorSize();
+      cursorR = Math.min(88, Math.max(52, Math.min(w, h) * 0.09));
     };
-    resizeCanvas();
-    window.addEventListener("resize", resizeCanvas);
+    resize();
 
-    // Track mouse position with velocity
-    let lastRippleTime = 0;
-    const rippleInterval = 600; // Create new ripple every 600ms (less frequent)
-    
-    const handleMouseMove = (e: MouseEvent) => {
-      const now = Date.now();
-      const vx = e.clientX - lastMousePosRef.current.x;
-      const vy = e.clientY - lastMousePosRef.current.y;
-      
-      mousePosRef.current = { x: e.clientX, y: e.clientY };
-      trailsRef.current.push({
-        x: e.clientX,
-        y: e.clientY,
-        time: now,
-        intensity: 1.0,
-        vx,
-        vy,
-      });
-      
-      lastMousePosRef.current = { x: e.clientX, y: e.clientY };
-      
-      // Keep only recent trails (last 30 points for smoother effect)
-      if (trailsRef.current.length > 30) {
-        trailsRef.current.shift();
-      }
-      
-      // Create continuous ripples on mouse movement
-      if (now - lastRippleTime > rippleInterval) {
-        ripplesRef.current.push({
+    const onTheme = () => {
+      paint = resolvePaint();
+      canvas.style.mixBlendMode = paint.blend;
+    };
+    const mo = new MutationObserver(onTheme);
+    mo.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
+
+    const onMove = (e: PointerEvent) => {
+      const now = performance.now();
+      mouse.x = e.clientX;
+      mouse.y = e.clientY;
+      trails.push({ x: e.clientX, y: e.clientY, time: now, intensity: 1 });
+      if (trails.length > 10) trails.shift();
+
+      if (now - lastRipple > 700) {
+        lastRipple = now;
+        ripples.push({
           x: e.clientX,
           y: e.clientY,
           startTime: now,
           radius: 0,
-          intensity: 1.0,
+          intensity: 1,
+          hue: brandHue(now * 0.001),
         });
-        
-        lastRippleTime = now;
-        
-        // Limit number of simultaneous ripples (allow more for continuous effect)
-        if (ripplesRef.current.length > 15) {
-          ripplesRef.current.shift();
-        }
+        if (ripples.length > 4) ripples.shift();
       }
+      if (running && !raf) raf = requestAnimationFrame(frame);
     };
 
-    window.addEventListener("mousemove", handleMouseMove, { passive: true });
-
-    // Handle click/touch to create water ripples
-    const handleClick = (e: MouseEvent | TouchEvent) => {
-      const clientX = 'touches' in e ? e.touches[0]?.clientX : e.clientX;
-      const clientY = 'touches' in e ? e.touches[0]?.clientY : e.clientY;
-      
-      if (clientX !== undefined && clientY !== undefined) {
-        const now = Date.now();
-        ripplesRef.current.push({
-          x: clientX,
-          y: clientY,
-          startTime: now,
-          radius: 0,
-          intensity: 1.0,
-        });
-        
-        // Limit number of simultaneous ripples
-        if (ripplesRef.current.length > 5) {
-          ripplesRef.current.shift();
-        }
-      }
-    };
-
-    window.addEventListener("click", handleClick);
-    window.addEventListener("touchstart", handleClick, { passive: true });
-
-    // Animation loop
-    const animate = (timestamp: number) => {
-      timeRef.current = timestamp * 0.001;
-      const now = Date.now();
-      
-      // Random movement for mobile (decorative only)
-      if (isMobileRef.current && randomMovementRef.current) {
-        const timeSinceLastMove = now - randomMovementRef.current.lastMove;
-        const moveInterval = 2500 + Math.random() * 2500; // 2.5-5 seconds between moves
-        const moveDuration = 1000 + Math.random() * 500; // 1-1.5 seconds to reach target
-        
-        // Check if it's time to set a new target
-        if (timeSinceLastMove > moveInterval) {
-          // Set new random target position
-          const padding = 150;
-          randomMovementRef.current.targetX = padding + Math.random() * (window.innerWidth - padding * 2);
-          randomMovementRef.current.targetY = padding + Math.random() * (window.innerHeight - padding * 2);
-          randomMovementRef.current.lastMove = now;
-        }
-        
-        // Smoothly move towards target
-        const timeSinceTargetSet = now - randomMovementRef.current.lastMove;
-        if (timeSinceTargetSet < moveDuration) {
-          const progress = Math.min(1, timeSinceTargetSet / moveDuration);
-          // Smooth ease-in-out curve
-          const easeProgress = progress < 0.5 
-            ? 2 * progress * progress 
-            : 1 - Math.pow(-2 * progress + 2, 2) / 2;
-          
-          // Interpolate between current and target position
-          const startX = randomMovementRef.current.x;
-          const startY = randomMovementRef.current.y;
-          randomMovementRef.current.x = startX + (randomMovementRef.current.targetX - startX) * easeProgress;
-          randomMovementRef.current.y = startY + (randomMovementRef.current.targetY - startY) * easeProgress;
-          
-          mousePosRef.current = {
-            x: randomMovementRef.current.x,
-            y: randomMovementRef.current.y,
-          };
-        } else {
-          randomMovementRef.current.x = randomMovementRef.current.targetX;
-          randomMovementRef.current.y = randomMovementRef.current.targetY;
-          mousePosRef.current = {
-            x: randomMovementRef.current.x,
-            y: randomMovementRef.current.y,
-          };
-        }
-      }
-      
-      const mouseX = mousePosRef.current.x;
-      const mouseY = mousePosRef.current.y;
-
-      const rippleDuration = 2000;
-      ripplesRef.current = ripplesRef.current.filter((ripple) => {
-        const age = now - ripple.startTime;
-        if (age > rippleDuration) return false;
-
-        const progress = age / rippleDuration;
-        ripple.radius = progress * 500;
-        ripple.intensity = Math.max(0, 1 - progress * 0.8);
-
-        return true;
+    const onClick = (e: PointerEvent) => {
+      ripples.push({
+        x: e.clientX,
+        y: e.clientY,
+        startTime: performance.now(),
+        radius: 0,
+        intensity: 1,
+        hue: brandHue(performance.now() * 0.001, 1),
       });
+      if (ripples.length > 5) ripples.shift();
+      if (running && !raf) raf = requestAnimationFrame(frame);
+    };
 
-      // Clear with slow fade effect (creates smudge trail)
-      ctx.fillStyle = "rgba(255, 255, 255, 0.02)";
-      ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
+    const onVis = () => {
+      running = !document.hidden;
+      if (running && !raf) raf = requestAnimationFrame(frame);
+    };
 
-      // Update and draw trails with wave effect
-      trailsRef.current = trailsRef.current.filter((trail, index) => {
-        const age = (now - trail.time) / 1000; // Age in seconds
-        trail.intensity = Math.max(0, 1 - age * 1.5); // Fade over ~0.67 seconds
-        
-        if (trail.intensity <= 0) return false;
+    const onLeave = () => {
+      mouse.x = -1;
+      mouse.y = -1;
+    };
 
-        // Add wave distortion based on time and position
-        const waveX = Math.sin(timeRef.current * 2 + trail.x * 0.01) * 5 * trail.intensity;
-        const waveY = Math.cos(timeRef.current * 1.5 + trail.y * 0.01) * 5 * trail.intensity;
-        
-        const x = trail.x + waveX;
-        const y = trail.y + waveY;
-        
-        // Draw smudge effect with colors (not blue)
-        // Trail radius is 80% of cursor size
-        const radius = cursorSizeRef.current * 0.8 * trail.intensity;
-        const gradient = ctx.createRadialGradient(x, y, 0, x, y, radius);
-        
-        // Unisex color mixing - greens, oranges, yellows
-        const baseHue = 60 + Math.sin(timeRef.current * 0.5 + index * 0.3) * 80; // 0-140 (yellows, greens, oranges)
-        const hue1 = baseHue;
-        const hue2 = baseHue + 30;
-        const hue3 = baseHue + 60;
-        
-        gradient.addColorStop(0, `hsla(${hue1}, 70%, 60%, ${0.4 * trail.intensity})`);
-        gradient.addColorStop(0.33, `hsla(${hue2}, 70%, 60%, ${0.3 * trail.intensity})`);
-        gradient.addColorStop(0.66, `hsla(${hue3}, 70%, 60%, ${0.25 * trail.intensity})`);
-        gradient.addColorStop(1, `hsla(${hue1}, 70%, 60%, ${0.05 * trail.intensity})`);
+    window.addEventListener("pointermove", onMove, { passive: true });
+    window.addEventListener("pointerdown", onClick, { passive: true });
+    window.addEventListener("pointerleave", onLeave, { passive: true });
+    window.addEventListener("resize", resize, { passive: true });
+    document.addEventListener("visibilitychange", onVis);
 
-        ctx.fillStyle = gradient;
+    const spawnCap = isCoarse ? 12 : 28;
+
+    const frame = (now: number) => {
+      if (!running) {
+        raf = 0;
+        return;
+      }
+      t = now * 0.001;
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      const idle =
+        trails.length === 0 &&
+        ripples.length === 0 &&
+        particles.length === 0 &&
+        mouse.x < 0;
+
+      if (idle) {
+        ctx.globalCompositeOperation = "source-over";
+        ctx.clearRect(0, 0, w, h);
+        raf = 0;
+        return;
+      }
+
+      ctx.globalCompositeOperation = "source-over";
+      ctx.fillStyle = paint.fade;
+      ctx.fillRect(0, 0, w, h);
+
+      // Trails — few, vivid, modest radius
+      for (let i = trails.length - 1; i >= 0; i--) {
+        const tr = trails[i];
+        const age = (now - tr.time) / 1000;
+        tr.intensity = 1 - age * 1.8;
+        if (tr.intensity <= 0) {
+          trails.splice(i, 1);
+          continue;
+        }
+        const r = cursorR * 0.55 * tr.intensity;
+        const hx = brandHue(t, i);
+        const hy = brandHue(t + 0.4, i + 1);
+        const g = ctx.createRadialGradient(tr.x, tr.y, 0, tr.x, tr.y, r);
+        g.addColorStop(0, hs(hx, 0.5 * tr.intensity, paint));
+        g.addColorStop(0.45, hs(hy, 0.28 * tr.intensity, paint));
+        g.addColorStop(1, hs(hx, 0, paint));
+        ctx.fillStyle = g;
         ctx.beginPath();
-        ctx.arc(x, y, radius, 0, Math.PI * 2);
+        ctx.arc(tr.x, tr.y, r, 0, Math.PI * 2);
         ctx.fill();
-
-        return true;
-      });
-
-      // Spawn hyper-fast particles randomly (sometimes)
-      const particleSpawnChance = 0.05; // 5% chance per frame - more frequent
-      const bigParticleSpawnChance = 0.008; // 0.8% chance per frame for big particles
-      const minTimeBetweenSpawns = 100; // Minimum 100ms between spawns
-      const minTimeBetweenBigSpawns = 500; // Minimum 500ms between big particle spawns
-      
-      // Spawn small particles
-      if (Math.random() < particleSpawnChance && now - lastParticleSpawnRef.current > minTimeBetweenSpawns) {
-        const numParticles = 1 + Math.floor(Math.random() * 4); // 1-4 particles at a time
-        
-        for (let i = 0; i < numParticles; i++) {
-          const trajectory = Math.random() < 0.5 ? 'straight' : 'orbital';
-          
-          if (trajectory === 'straight') {
-            // Straight trajectory - spawn from random edge
-            const edge = Math.floor(Math.random() * 4);
-            let spawnX, spawnY, vx, vy;
-            
-            switch (edge) {
-              case 0: // Top
-              spawnX = Math.random() * canvas.width;
-              spawnY = 0;
-              vx = (Math.random() - 0.5) * 2;
-              vy = 15 + Math.random() * 25; // Much faster downward
-              break;
-            case 1: // Right
-              spawnX = canvas.width;
-              spawnY = Math.random() * canvas.height;
-              vx = -(15 + Math.random() * 25); // Much faster leftward
-              vy = (Math.random() - 0.5) * 2;
-              break;
-            case 2: // Bottom
-              spawnX = Math.random() * canvas.width;
-              spawnY = canvas.height;
-              vx = (Math.random() - 0.5) * 2;
-              vy = -(15 + Math.random() * 25); // Much faster upward
-              break;
-            case 3: // Left
-              spawnX = 0;
-              spawnY = Math.random() * canvas.height;
-              vx = 15 + Math.random() * 25; // Much faster rightward
-              vy = (Math.random() - 0.5) * 2;
-              break;
-              default:
-              spawnX = Math.random() * canvas.width;
-              spawnY = Math.random() * canvas.height;
-              const angle = Math.random() * Math.PI * 2;
-              const speed = 15 + Math.random() * 25; // Much faster
-              vx = Math.cos(angle) * speed;
-              vy = Math.sin(angle) * speed;
-            }
-            
-            particlesRef.current.push({
-              x: spawnX,
-              y: spawnY,
-              vx,
-              vy,
-              life: 0,
-              maxLife: 1000 + Math.random() * 2000, // 1-3 seconds
-              size: 1, // Small particle
-              trajectory: 'straight',
-            });
-          } else {
-            // Orbital trajectory
-            const centerX = Math.random() * canvas.width;
-            const centerY = Math.random() * canvas.height;
-            const radius = 50 + Math.random() * 200;
-            const angle = Math.random() * Math.PI * 2;
-            const angularVelocity = (0.05 + Math.random() * 0.15) * (Math.random() < 0.5 ? 1 : -1); // Fast rotation
-            
-            particlesRef.current.push({
-              x: centerX + Math.cos(angle) * radius,
-              y: centerY + Math.sin(angle) * radius,
-              vx: 0,
-              vy: 0,
-              life: 0,
-              maxLife: 2000 + Math.random() * 3000, // 2-5 seconds
-              size: 1, // Small particle
-              trajectory: 'orbital',
-              centerX,
-              centerY,
-              angle,
-              radius,
-              angularVelocity,
-            });
-          }
-        }
-        
-        lastParticleSpawnRef.current = now;
       }
-      
-      // Spawn big particles (less frequently)
-      if (Math.random() < bigParticleSpawnChance && now - lastParticleSpawnRef.current > minTimeBetweenBigSpawns) {
-        const numBigParticles = 1 + Math.floor(Math.random() * 2); // 1-2 big particles at a time
-        
-        for (let i = 0; i < numBigParticles; i++) {
-          const trajectory = Math.random() < 0.6 ? 'straight' : 'orbital';
-          const particleSize = 8 + Math.random() * 12; // 8-20px big particles
-          
-          if (trajectory === 'straight') {
-            // Straight trajectory - spawn from random edge
-            const edge = Math.floor(Math.random() * 4);
-            let spawnX, spawnY, vx, vy;
-            
-            switch (edge) {
-              case 0: // Top
-                spawnX = Math.random() * canvas.width;
-                spawnY = 0;
-                vx = (Math.random() - 0.5) * 3;
-                vy = 8 + Math.random() * 12; // Slower than small particles
-                break;
-              case 1: // Right
-                spawnX = canvas.width;
-                spawnY = Math.random() * canvas.height;
-                vx = -(8 + Math.random() * 12);
-                vy = (Math.random() - 0.5) * 3;
-                break;
-              case 2: // Bottom
-                spawnX = Math.random() * canvas.width;
-                spawnY = canvas.height;
-                vx = (Math.random() - 0.5) * 3;
-                vy = -(8 + Math.random() * 12);
-                break;
-              case 3: // Left
-                spawnX = 0;
-                spawnY = Math.random() * canvas.height;
-                vx = 8 + Math.random() * 12;
-                vy = (Math.random() - 0.5) * 3;
-                break;
-              default:
-                spawnX = Math.random() * canvas.width;
-                spawnY = Math.random() * canvas.height;
-                const angle = Math.random() * Math.PI * 2;
-                const speed = 8 + Math.random() * 12;
-                vx = Math.cos(angle) * speed;
-                vy = Math.sin(angle) * speed;
-            }
-            
-            particlesRef.current.push({
-              x: spawnX,
-              y: spawnY,
-              vx,
-              vy,
-              life: 0,
-              maxLife: 3000 + Math.random() * 4000, // 3-7 seconds
-              size: particleSize,
-              trajectory: 'straight',
-            });
-          } else {
-            // Orbital trajectory for big particles
-            const centerX = Math.random() * canvas.width;
-            const centerY = Math.random() * canvas.height;
-            const radius = 100 + Math.random() * 300; // Larger orbits
-            const angle = Math.random() * Math.PI * 2;
-            const angularVelocity = (0.02 + Math.random() * 0.08) * (Math.random() < 0.5 ? 1 : -1); // Slower rotation
-            
-            particlesRef.current.push({
-              x: centerX + Math.cos(angle) * radius,
-              y: centerY + Math.sin(angle) * radius,
-              vx: 0,
-              vy: 0,
-              life: 0,
-              maxLife: 4000 + Math.random() * 5000, // 4-9 seconds
-              size: particleSize,
-              trajectory: 'orbital',
-              centerX,
-              centerY,
-              angle,
-              radius,
-              angularVelocity,
-            });
-          }
+
+      // Occasional brand particles (cheap rects, no shadows)
+      if (
+        !isCoarse &&
+        particles.length < spawnCap &&
+        now - lastParticle > 180 &&
+        Math.random() < 0.04
+      ) {
+        lastParticle = now;
+        const edge = Math.floor(Math.random() * 4);
+        let x = 0;
+        let y = 0;
+        let vx = 0;
+        let vy = 0;
+        const spd = 6 + Math.random() * 10;
+        if (edge === 0) {
+          x = Math.random() * w;
+          y = -4;
+          vy = spd;
+          vx = (Math.random() - 0.5) * 2;
+        } else if (edge === 1) {
+          x = w + 4;
+          y = Math.random() * h;
+          vx = -spd;
+          vy = (Math.random() - 0.5) * 2;
+        } else if (edge === 2) {
+          x = Math.random() * w;
+          y = h + 4;
+          vy = -spd;
+          vx = (Math.random() - 0.5) * 2;
+        } else {
+          x = -4;
+          y = Math.random() * h;
+          vx = spd;
+          vy = (Math.random() - 0.5) * 2;
         }
-        
-        lastParticleSpawnRef.current = now;
-      }
-      
-      // Spawn Higgs boson more frequently (every 2-4 seconds)
-      const higgsSpawnInterval = 2000 + Math.random() * 2000; // 2-4 seconds
-      if (now - lastHiggsSpawnRef.current > higgsSpawnInterval) {
-        // Spawn from anywhere on screen
-        const startX = Math.random() * canvas.width;
-        const startY = Math.random() * canvas.height;
-        
-        // Calculate viewport diagonal for path length reference
-        const viewportDiagonal = Math.sqrt(canvas.width ** 2 + canvas.height ** 2);
-        
-        // Path length: 150% to 300% of viewport diagonal (much longer trajectories)
-        const pathLength = viewportDiagonal * (1.5 + Math.random() * 1.5); // 1.5 to 3.0
-        
-        // Random direction
-        const angle = Math.random() * Math.PI * 2;
-        
-        // Calculate end position
-        const endX = startX + Math.cos(angle) * pathLength;
-        const endY = startY + Math.sin(angle) * pathLength;
-        
-        // Fast but noticeable speed - travel time based on path length
-        // Longer paths take proportionally longer, but still fast
-        const baseSpeed = viewportDiagonal / 300; // Base speed: cross viewport in ~300ms
-        const travelTime = pathLength / baseSpeed; // Proportional to path length
-        
-        particlesRef.current.push({
-          x: startX,
-          y: startY,
-          vx: Math.cos(angle) * baseSpeed,
-          vy: Math.sin(angle) * baseSpeed,
+        particles.push({
+          x,
+          y,
+          vx,
+          vy,
           life: 0,
-          maxLife: travelTime,
-          size: 2 + Math.random() * 2, // Small: 2-4 pixels
-          trajectory: 'straight',
-          type: 'higgs',
+          maxLife: 1400 + Math.random() * 1600,
+          size: 1 + Math.random() * 3,
+          hue: BRAND_LIST[Math.floor(Math.random() * 3)],
         });
-        
-        lastHiggsSpawnRef.current = now;
       }
-      
-      // Update and draw particles
-      particlesRef.current = particlesRef.current.filter((particle) => {
-        // Update position based on trajectory
-        if (particle.trajectory === 'straight') {
-          particle.x += particle.vx;
-          particle.y += particle.vy;
-        } else if (particle.trajectory === 'orbital') {
-          // Orbital movement
-          particle.angle! += particle.angularVelocity!;
-          particle.x = particle.centerX! + Math.cos(particle.angle!) * particle.radius!;
-          particle.y = particle.centerY! + Math.sin(particle.angle!) * particle.radius!;
-        }
-        
-        particle.life += 16; // Approximate frame time
-        
-        // Remove if expired
-        // For Higgs boson, only remove when expired (not when off-screen) to allow long trajectories
-        if (particle.life > particle.maxLife) {
-          return false;
-        }
-        
-        // For other particles, remove if off screen
-        if (particle.type !== 'higgs' && 
-            (particle.x < -100 || particle.x > canvas.width + 100 ||
-             particle.y < -100 || particle.y > canvas.height + 100)) {
-          return false;
-        }
-        
-        // Draw particle - unisex colors
-        const size = particle.size || 1; // Ensure size is always defined and valid
-        
-        // Validate particle position and size
-        if (!isFinite(particle.x) || !isFinite(particle.y) || !isFinite(size) || size <= 0) {
-          return false; // Skip invalid particles
-        }
-        
-        if (particle.type === 'higgs') {
-          // Higgs boson - pure black dot, like a cut
-          ctx.fillStyle = 'rgba(0, 0, 0, 1)'; // Pure black
-          ctx.fillRect(Math.floor(particle.x - size / 2), Math.floor(particle.y - size / 2), size, size);
-        } else if (size === 1) {
-          // Small 1px particle
-          const particleHue = 30 + Math.random() * 120; // Orange/yellow/green range (30-150)
-          const alpha = 1 - (particle.life / particle.maxLife) * 0.3; // Fade slightly
-          
-          ctx.fillStyle = `hsla(${particleHue}, 80%, 70%, ${alpha})`;
-          ctx.fillRect(Math.floor(particle.x), Math.floor(particle.y), 1, 1);
-          
-          // Also draw a slightly larger point for visibility
-          ctx.fillStyle = `hsla(${particleHue}, 80%, 70%, ${alpha * 0.5})`;
-          ctx.fillRect(Math.floor(particle.x) - 1, Math.floor(particle.y) - 1, 3, 3);
-        } else {
-          // Big particle - draw as circle with gradient
-          const particleHue = 30 + Math.random() * 120; // Orange/yellow/green range (30-150)
-          const alpha = 1 - (particle.life / particle.maxLife) * 0.3; // Fade slightly
-          
-          const gradient = ctx.createRadialGradient(
-            particle.x, particle.y, 0,
-            particle.x, particle.y, size
-          );
-          gradient.addColorStop(0, `hsla(${particleHue}, 80%, 70%, ${alpha})`);
-          gradient.addColorStop(0.5, `hsla(${particleHue + 20}, 80%, 65%, ${alpha * 0.7})`);
-          gradient.addColorStop(1, `hsla(${particleHue + 40}, 80%, 60%, ${alpha * 0.3})`);
-          
-          ctx.fillStyle = gradient;
-          ctx.beginPath();
-          ctx.arc(particle.x, particle.y, size, 0, Math.PI * 2);
-          ctx.fill();
-          
-          // Add glow effect for big particles
-          ctx.shadowBlur = size * 0.6;
-          ctx.shadowColor = `hsla(${particleHue}, 80%, 70%, ${alpha * 0.5})`;
-          ctx.fill();
-          ctx.shadowBlur = 0;
-        }
-        
-        return true;
-      });
 
-      // Draw water ripples on canvas - always show concentric circles
-      ripplesRef.current.forEach((ripple, index) => {
-        const age = now - ripple.startTime;
-        const progress = age / rippleDuration;
-        
-        if (progress < 1) {
-          // Draw multiple concentric circles for each ripple (stronger visual)
-          const numRings = 6; // More rings for stronger effect
-          const ringSpacing = 50; // Wider spacing between rings
-          
-          for (let ring = 0; ring < numRings; ring++) {
-            const ringRadius = ripple.radius - ring * ringSpacing;
-            
-            // Only draw if ring is positive radius and visible
-            if (ringRadius > 0) {
-              // Calculate opacity based on distance from center and time (stronger)
-              const ringProgress = ring / numRings;
-              const ringOpacity = (1 - ringProgress) * ripple.intensity * 0.9; // Increased from 0.6 to 0.9
-              
-              // Alternate between green and orange for better visibility
-              const hue = 60 + (ring % 2) * 60; // 60 (yellow) or 120 (green)
-              
-              ctx.strokeStyle = `hsla(${hue}, 80%, 65%, ${ringOpacity})`; // Higher saturation and lightness
-              ctx.lineWidth = 3; // Thicker lines (increased from 2)
-              ctx.beginPath();
-              ctx.arc(ripple.x, ripple.y, ringRadius, 0, Math.PI * 2);
-              ctx.stroke();
-              
-              // Add stronger glow effect
-              ctx.shadowBlur = 4;
-              ctx.shadowColor = `hsla(${hue}, 80%, 65%, ${ringOpacity * 0.7})`; // Stronger shadow
-              ctx.stroke();
-              ctx.shadowBlur = 0;
-            }
-          }
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.life += 16;
+        if (
+          p.life > p.maxLife ||
+          p.x < -40 ||
+          p.x > w + 40 ||
+          p.y < -40 ||
+          p.y > h + 40
+        ) {
+          particles.splice(i, 1);
+          continue;
         }
-      });
+        const a = 1 - p.life / p.maxLife;
+        ctx.fillStyle = hs(p.hue, a * 0.85, paint);
+        const s = p.size;
+        ctx.fillRect(p.x - s / 2, p.y - s / 2, s, s);
+      }
 
-      // Draw current cursor position with stronger wave effect
-      if (mouseX > 0 && mouseY > 0) {
-        const waveX = Math.sin(timeRef.current * 3) * 8;
-        const waveY = Math.cos(timeRef.current * 2.5) * 8;
-        
-        const cursorRadius = cursorSizeRef.current;
-        const cursorGradient = ctx.createRadialGradient(
-          mouseX + waveX,
-          mouseY + waveY,
-          0,
-          mouseX + waveX,
-          mouseY + waveY,
-          cursorRadius
-        );
-        
-        // Unisex colors - greens, oranges, yellows
-        const baseHue = 60 + Math.sin(timeRef.current * 0.4) * 80; // 0-140 (yellows, greens, oranges)
-        cursorGradient.addColorStop(0, `hsla(${baseHue}, 80%, 65%, 0.5)`);
-        cursorGradient.addColorStop(0.2, `hsla(${baseHue + 15}, 80%, 65%, 0.4)`);
-        cursorGradient.addColorStop(0.4, `hsla(${baseHue + 30}, 80%, 65%, 0.35)`);
-        cursorGradient.addColorStop(0.6, `hsla(${baseHue + 45}, 80%, 65%, 0.3)`);
-        cursorGradient.addColorStop(0.8, `hsla(${baseHue + 60}, 80%, 65%, 0.2)`);
-        cursorGradient.addColorStop(1, `hsla(${baseHue + 75}, 80%, 65%, 0.1)`);
-
-        ctx.fillStyle = cursorGradient;
-        ctx.beginPath();
-        ctx.arc(mouseX + waveX, mouseY + waveY, cursorRadius, 0, Math.PI * 2);
-        ctx.fill();
-        
-        // Add additional wave rings
-        for (let i = 1; i <= 3; i++) {
-          const ringRadius = cursorRadius + i * (cursorRadius * 0.2);
-          const ringIntensity = 0.2 / i;
-          const ringWave = Math.sin(timeRef.current * 2 + i) * 5;
-          
-          ctx.strokeStyle = `hsla(${baseHue + i * 15}, 70%, 60%, ${ringIntensity})`;
+      // Ripples — 3 rings, no shadowBlur
+      for (let i = ripples.length - 1; i >= 0; i--) {
+        const rp = ripples[i];
+        const progress = (now - rp.startTime) / 1600;
+        if (progress >= 1) {
+          ripples.splice(i, 1);
+          continue;
+        }
+        rp.radius = progress * 280;
+        rp.intensity = 1 - progress;
+        for (let ring = 0; ring < 3; ring++) {
+          const rr = rp.radius - ring * 36;
+          if (rr <= 0) continue;
+          const a = (1 - ring / 3) * rp.intensity * 0.55;
+          ctx.strokeStyle = hs(BRAND_LIST[(ring + Math.floor(rp.hue)) % 3], a, paint);
           ctx.lineWidth = 2;
           ctx.beginPath();
-          ctx.arc(
-            mouseX + waveX,
-            mouseY + waveY + ringWave,
-            ringRadius,
-            0,
-            Math.PI * 2
-          );
+          ctx.arc(rp.x, rp.y, rr, 0, Math.PI * 2);
           ctx.stroke();
         }
       }
 
-      animationFrameRef.current = requestAnimationFrame(animate);
+      // Cursor bloom
+      if (mouse.x >= 0 && !isCoarse) {
+        const wx = Math.sin(t * 2.4) * 4;
+        const wy = Math.cos(t * 2.1) * 4;
+        const cx = mouse.x + wx;
+        const cy = mouse.y + wy;
+        const h1 = brandHue(t);
+        const h2 = brandHue(t + 0.55, 1);
+        const h3 = brandHue(t + 1.1, 2);
+        const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, cursorR);
+        g.addColorStop(0, hs(h1, 0.58, paint));
+        g.addColorStop(0.35, hs(h2, 0.32, paint));
+        g.addColorStop(0.7, hs(h3, 0.14, paint));
+        g.addColorStop(1, hs(h1, 0, paint));
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(cx, cy, cursorR, 0, Math.PI * 2);
+        ctx.fill();
+
+        for (let i = 1; i <= 2; i++) {
+          ctx.strokeStyle = hs(BRAND_LIST[i % 3], 0.18 / i, paint);
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.arc(cx, cy, cursorR + i * cursorR * 0.22, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      }
+
+      raf = requestAnimationFrame(frame);
     };
 
-    animate(0);
+    raf = requestAnimationFrame(frame);
 
     return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("resize", resizeCanvas);
-      window.removeEventListener("click", handleClick);
-      window.removeEventListener("touchstart", handleClick);
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
-      // Clean up CSS custom properties
-      if (bodyRef.current) {
-        bodyRef.current.style.removeProperty('--lens-x');
-        bodyRef.current.style.removeProperty('--lens-y');
-        bodyRef.current.style.removeProperty('--lens-zoom');
-        bodyRef.current.style.removeProperty('--lens-radius');
-      }
+      running = false;
+      cancelAnimationFrame(raf);
+      mo.disconnect();
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerdown", onClick);
+      window.removeEventListener("pointerleave", onLeave);
+      window.removeEventListener("resize", resize);
+      document.removeEventListener("visibilitychange", onVis);
     };
   }, []);
 
@@ -689,15 +390,12 @@ export default function CursorSmudge() {
       aria-hidden="true"
       style={{
         position: "fixed",
-        top: 0,
-        left: 0,
+        inset: 0,
         width: "100%",
         height: "100%",
         pointerEvents: "none",
         zIndex: 9999,
-        mixBlendMode: "multiply",
       }}
     />
   );
 }
-

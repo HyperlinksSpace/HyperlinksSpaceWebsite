@@ -15,19 +15,20 @@ export default function AnimatedCell({ n, href, svgSrc }: AnimatedCellProps) {
   useEffect(() => {
     const wrapper = wrapperRef.current;
     if (!wrapper) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
     let cancelled = false;
     let timeoutId: ReturnType<typeof setTimeout>;
 
     const updateAspectRatio = () => {
-      const scaleX = 0.82 + Math.random() * 0.36;
-      const scaleY = 0.82 + Math.random() * 0.36;
+      const scaleX = 0.88 + Math.random() * 0.24;
+      const scaleY = 0.88 + Math.random() * 0.24;
       wrapper.style.transform = `translate3d(0,0,0) scale(${scaleX}, ${scaleY})`;
     };
 
     const scheduleNext = () => {
       if (cancelled) return;
-      const delay = Math.random() * 2500 + 2000;
+      const delay = Math.random() * 3200 + 2800;
       timeoutId = setTimeout(() => {
         if (cancelled) return;
         updateAspectRatio();
@@ -44,6 +45,8 @@ export default function AnimatedCell({ n, href, svgSrc }: AnimatedCellProps) {
     };
   }, []);
 
+  const tone = (Math.min(4, Math.max(1, n)) as 1 | 2 | 3 | 4);
+
   return (
     <a
       className="hyperlinksCell"
@@ -55,7 +58,7 @@ export default function AnimatedCell({ n, href, svgSrc }: AnimatedCellProps) {
       <div className="hyperlinksImagePad">
         <div className="hyperlinksImageContainer">
           <div ref={wrapperRef} className="hyperlinksSvgWrapper">
-            <WaveSVG svgSrc={svgSrc} />
+            <WaveSVG svgSrc={svgSrc} tone={tone} />
           </div>
         </div>
       </div>
