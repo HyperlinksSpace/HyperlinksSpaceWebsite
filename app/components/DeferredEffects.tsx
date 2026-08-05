@@ -15,24 +15,30 @@ function isLowPower() {
   if (typeof navigator === "undefined") return false;
   const nav = navigator as Navigator & {
     deviceMemory?: number;
-    connection?: { saveData?: boolean };
+    connection?: { saveData?: boolean; effectiveType?: string };
   };
   if (nav.connection?.saveData) return true;
+  if (nav.connection?.effectiveType === "2g" || nav.connection?.effectiveType === "slow-2g")
+    return true;
   if (typeof nav.deviceMemory === "number" && nav.deviceMemory <= 4) return true;
   if (window.innerWidth <= 768) return true;
+  if (window.matchMedia("(pointer: coarse)").matches) return true;
   return false;
 }
 
 function whenIdle(cb: () => void, timeout: number) {
   const w = window as Window & {
-    requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+    requestIdleCallback?: (
+      cb: () => void,
+      opts?: { timeout: number }
+    ) => number;
     cancelIdleCallback?: (id: number) => void;
   };
   if (typeof w.requestIdleCallback === "function") {
     const id = w.requestIdleCallback(() => cb(), { timeout });
     return () => w.cancelIdleCallback?.(id);
   }
-  const t = window.setTimeout(cb, Math.min(timeout, 400));
+  const t = window.setTimeout(cb, Math.min(timeout, 600));
   return () => window.clearTimeout(t);
 }
 
@@ -46,35 +52,32 @@ export default function DeferredEffects({ links }: { links: string[] }) {
     const cleanups: Array<() => void> = [];
     const low = isLowPower();
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const coarse = window.matchMedia("(pointer: coarse)").matches;
 
-    if (reduced) {
-      return;
-    }
+    if (reduced) return;
 
-    // Stickers first (light), then BH after first paint settles
-    cleanups.push(
-      whenIdle(() => {
-        if (!cancelled) setShowStickers(true);
-      }, low ? 600 : 200)
-    );
-
+    // Paint the page first; stagger heavy effects so load feels instant
     cleanups.push(
       whenIdle(() => {
         if (!cancelled) setShowBlackHole(true);
-      }, low ? 1800 : 900)
+      }, low ? 1200 : 500)
     );
 
-    const enableCursor = () => {
-      if (!cancelled) setShowCursor(true);
-    };
+    cleanups.push(
+      whenIdle(() => {
+        if (!cancelled) setShowStickers(true);
+      }, low ? 2800 : 1600)
+    );
 
-    // Skip cursor canvas on coarse pointers — big mobile savings, no quality hit to BH
-    if (!window.matchMedia("(pointer: coarse)").matches) {
+    if (!coarse) {
+      const enableCursor = () => {
+        if (!cancelled) setShowCursor(true);
+      };
       window.addEventListener("pointermove", enableCursor, {
         once: true,
         passive: true,
       });
-      const cursorTimer = window.setTimeout(enableCursor, low ? 5000 : 2500);
+      const cursorTimer = window.setTimeout(enableCursor, low ? 6000 : 3500);
       cleanups.push(() => {
         window.clearTimeout(cursorTimer);
         window.removeEventListener("pointermove", enableCursor);

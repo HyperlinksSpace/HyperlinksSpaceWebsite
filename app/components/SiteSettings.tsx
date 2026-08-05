@@ -169,7 +169,7 @@ function BodyControls({
 }
 
 function BlackHoleIcon() {
-  // Compact singularity mark — void + bright incomplete photon arc (not rings / eye / Saturn).
+  // C-like photon arc only — same mark on light and dark
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" className="themeSwitchIcon bhIcon">
       <defs>
@@ -179,9 +179,6 @@ function BlackHoleIcon() {
           <stop offset="100%" stopColor="currentColor" stopOpacity="0.15" />
         </linearGradient>
       </defs>
-      {/* Soft outer glow */}
-      <circle cx="12" cy="12" r="10" fill="currentColor" opacity="0.12" />
-      {/* Photon arc — open on one side so it reads as a BH, not a planet */}
       <path
         d="M18.4 8.2a7.1 7.1 0 1 0 0 7.6"
         fill="none"
@@ -197,8 +194,6 @@ function BlackHoleIcon() {
         strokeLinecap="round"
         opacity="0.35"
       />
-      {/* Event horizon */}
-      <circle className="bhIconVoid" cx="12" cy="12" r="4.6" />
     </svg>
   );
 }

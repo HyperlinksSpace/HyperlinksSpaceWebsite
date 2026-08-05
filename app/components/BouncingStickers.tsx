@@ -3,9 +3,10 @@
 import { useEffect, useRef } from "react";
 
 const STICKER_SIZE = 44;
-const SPEED_PX_PER_SEC = 240;
-const PHYSICS_STEP_MS = 1000 / 60;
-const MAX_FRAME_MS = 32;
+const SPEED_PX_PER_SEC = 160;
+const PHYSICS_STEP_MS = 1000 / 30;
+const MAX_FRAME_MS = 48;
+const RENDER_MS = 1000 / 30;
 
 type StickerData = {
   x: number;
@@ -156,11 +157,17 @@ export default function BouncingStickers({ links }: { links: string[] }) {
 
     let lastTime = performance.now();
     let accumulator = 0;
+    let renderAccum = 0;
+    let running = !document.hidden;
 
     function loop(now: number) {
+      rafRef.current = requestAnimationFrame(loop);
+      if (!running) return;
+
       const frameMs = Math.min(Math.max(now - lastTime, 0), MAX_FRAME_MS);
       lastTime = now;
       accumulator += frameMs;
+      renderAccum += frameMs;
 
       const current = stickersRef.current;
       const boundsW = window.innerWidth;
@@ -171,18 +178,28 @@ export default function BouncingStickers({ links }: { links: string[] }) {
         accumulator -= PHYSICS_STEP_MS;
       }
 
+      if (renderAccum < RENDER_MS) return;
+      renderAccum = 0;
+
       stickerElsRef.current.forEach((el, i) => {
         const s = current[i];
         if (el && s) {
           applyStickerTransform(el, s);
         }
       });
-
-      rafRef.current = requestAnimationFrame(loop);
     }
 
+    const onVis = () => {
+      running = !document.hidden;
+      if (running) lastTime = performance.now();
+    };
+    document.addEventListener("visibilitychange", onVis);
+
     rafRef.current = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(rafRef.current);
+    return () => {
+      cancelAnimationFrame(rafRef.current);
+      document.removeEventListener("visibilitychange", onVis);
+    };
   }, []);
 
   return (

@@ -44,7 +44,10 @@ type Paint = {
   light: number;
   alphaMul: number;
   fade: string;
-  blend: GlobalCompositeOperation;
+  /** How the full-frame fade is composited (light must erase, not paint white) */
+  fadeOp: GlobalCompositeOperation;
+  /** CSS mix-blend-mode on the overlay canvas */
+  blend: string;
 };
 
 function resolvePaint(): Paint {
@@ -55,6 +58,7 @@ function resolvePaint(): Paint {
       light: 62,
       alphaMul: 1.15,
       fade: "rgba(4, 7, 6, 0.22)",
+      fadeOp: "source-over",
       blend: "screen",
     };
   }
@@ -67,16 +71,18 @@ function resolvePaint(): Paint {
         light: 62,
         alphaMul: 1.15,
         fade: "rgba(4, 7, 6, 0.22)",
+        fadeOp: "source-over",
         blend: "screen",
       }
     : {
-        // Light theme: source-over + brighter pastels — multiply was muddying to olive/brown
+        // Light: sharp jewel accents on pure white
         dark: false,
-        sat: 78,
-        light: 52,
-        alphaMul: 0.78,
-        fade: "rgba(255, 255, 255, 0.26)",
-        blend: "source-over",
+        sat: 100,
+        light: 46,
+        alphaMul: 0.72,
+        fade: "rgba(0, 0, 0, 0.18)",
+        fadeOp: "destination-out",
+        blend: "normal",
       };
 }
 
@@ -90,16 +96,15 @@ function hs(hue: number, a: number, paint: Paint): string {
   let sat = paint.sat;
   let light = paint.light;
   if (!paint.dark) {
-    // Per-brand lift so emerald/orange/blue stay jewel-clean on cream
     if (hue >= 120 && hue <= 170) {
-      sat = 72;
-      light = 46;
+      sat = 100;
+      light = 42;
     } else if (hue <= 40) {
-      sat = 86;
-      light = 54;
+      sat = 100;
+      light = 48;
     } else {
-      sat = 74;
-      light = 52;
+      sat = 100;
+      light = 46;
     }
   }
   return `hsla(${hue}, ${sat}%, ${light}%, ${Math.min(1, a * paint.alphaMul)})`;
@@ -235,9 +240,10 @@ export default function CursorSmudge() {
         return;
       }
 
-      ctx.globalCompositeOperation = "source-over";
+      ctx.globalCompositeOperation = paint.fadeOp;
       ctx.fillStyle = paint.fade;
       ctx.fillRect(0, 0, w, h);
+      ctx.globalCompositeOperation = "source-over";
 
       // Trails — few, vivid, modest radius
       for (let i = trails.length - 1; i >= 0; i--) {

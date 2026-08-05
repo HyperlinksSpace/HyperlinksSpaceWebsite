@@ -48,7 +48,7 @@ uniform float u_hue2;
 uniform sampler2D u_noise;
 
 #define PI 3.14159265
-#define MAX_STEPS 120
+#define MAX_STEPS 72
 
 float ls(float x) { return abs(mod(x, 2.0) - 1.0); }
 float lsa(float x) { return abs(mod(x / PI, 2.0) - 1.0) * 2.0 - 1.0; }
@@ -92,10 +92,10 @@ vec3 sky(vec3 rd) {
   float lon = atan(d.z, d.x);
   float band = exp(-pow((lat - 0.06 * sin(lon * 2.4 + u_time * 0.15)) * 3.0, 2.0));
   vec3 dustDark = vec3(0.02, 0.025, 0.045) + vec3(0.08, 0.05, 0.03) * band;
-  // Light theme: soft white / pearl field around the holes (not bleaching the disks)
-  vec3 dustLight = vec3(0.72, 0.82, 0.9) * 0.14 + vec3(0.5, 0.7, 0.65) * 0.08 * band;
+  // Light theme: almost no dust haze (haze read as dirt on white)
+  vec3 dustLight = vec3(0.92, 0.96, 1.0) * 0.04 * band;
   vec3 dust = mix(dustDark, dustLight, u_light);
-  dust += mix(vec3(0.03, 0.035, 0.06), vec3(0.1, 0.14, 0.16), u_light)
+  dust += mix(vec3(0.03, 0.035, 0.06), vec3(0.04, 0.06, 0.1), u_light)
         * (texture(u_noise, vec2(lon, lat) * 0.4 + u_time * 0.01).r - 0.2);
 
   vec2 sp = vec2(lon, lat) * 110.0;
@@ -104,9 +104,9 @@ vec3 sky(vec3 rd) {
   vec2 p = g + vec2(hash21(g + 17.1), hash21(g + 91.7));
   float star = pow(h, 15.0) * smoothstep(0.05, 0.0, length(sp - p));
   vec3 starDark = vec3(0.9, 0.93, 1.0);
-  vec3 starLight = vec3(0.55, 0.75, 0.95);
+  vec3 starLight = vec3(0.2, 0.4, 0.85);
   vec3 starCol = mix(starDark, starLight, u_light);
-  return (dust * (0.4 + band * 1.15) + starCol * star * mix(1.6, 1.5, u_light)) * u_sky;
+  return (dust * (0.4 + band * 1.15) + starCol * star * mix(1.6, 1.2, u_light)) * u_sky;
 }
 
 vec3 bendResidual(vec3 ro, vec3 rd, vec3 p, float rs) {
@@ -199,8 +199,8 @@ vec4 trace(
     float d2 = binary > 0.5 ? length(ro - p2) : 1e9;
 
     if (d1 < C1 || d2 < C2) {
-      // Opaque horizon: black void / white hole core only
-      vec3 core = mix(vec3(0.0), vec3(0.99, 0.995, 1.0), u_light);
+      // Opaque horizon: black void / bright white-hole core
+      vec3 core = mix(vec3(0.0), vec3(1.0, 1.0, 1.0), u_light);
       return vec4(core, 1.0);
     }
 
@@ -215,7 +215,7 @@ vec4 trace(
     float h1 = d1 / (3.0 * r1);
     float h2 = d2 / (3.0 * max(r2, 1e-4));
     float h = (h1 * h2) / (h1 + h2);
-    h = clamp(h, 0.012, 2.3);
+    h = clamp(h, 0.02, 2.8);
     advance(ro, rd, h, p1, r1, a1, s1, p2, r2, a2, s2, binary);
 
     vec3 c;
@@ -291,11 +291,13 @@ void main() {
   if (u_binary > 0.5) dNear = min(dNear, length(uv - s2));
   // Geometric disk + orbit, with headroom for lensing magnification
   float diskSpan = (max(O1, O2) + sep * 0.55) / max(camDist * fov, 1.0);
-  float nearR = diskSpan * 3.6;
-  float farR = diskSpan * 6.5;
+  // Tighter LOD radii — large disks were ray-marching most of the viewport
+  float nearR = diskSpan * 2.6;
+  float farR = diskSpan * 4.0;
 
-  int limit = int(mix(72.0, float(MAX_STEPS), u_quality));
-  if (dNear > diskSpan * 1.8) limit = int(float(limit) * 0.62);
+  int limit = int(mix(36.0, float(MAX_STEPS), u_quality));
+  if (dNear > diskSpan * 1.35) limit = int(float(limit) * 0.5);
+  if (dNear > diskSpan * 2.4) limit = max(12, int(float(limit) * 0.28));
 
   vec4 hit = vec4(0.0);
   if (dNear < farR) {
@@ -307,18 +309,21 @@ void main() {
     );
   }
 
-  vec3 far = skyFar(ro, rd, P1, R1, P2, R2, u_binary);
-  float fall = exp(-dNear * mix(0.55, 0.38, u_mobile));
-  float aMax = mix(0.28, 0.42, u_mobile);
-  float farA = clamp(max(max(far.r, far.g), far.b) * mix(0.85, 1.15, u_mobile), 0.0, aMax) * fall;
-  farA *= 0.55 + 0.45 * u_sky;
-  vec4 farCol = vec4(far * farA, farA);
-
-  // Smooth LOD blend — hard switch was cutting disks into a visible box
+  vec4 farCol = vec4(0.0);
   float lod = smoothstep(farR, nearR, dNear);
+  if (lod < 0.97) {
+    vec3 far = skyFar(ro, rd, P1, R1, P2, R2, u_binary);
+    float fall = exp(-dNear * mix(0.55, 0.38, u_mobile));
+    float aMax = mix(0.28, 0.42, u_mobile);
+    float farA = clamp(max(max(far.r, far.g), far.b) * mix(0.85, 1.15, u_mobile), 0.0, aMax) * fall;
+    farA *= 0.55 + 0.45 * u_sky;
+    farCol = vec4(far * farA, farA);
+  }
 
   vec3 col = hit.rgb * mix(0.95, 1.55, clamp(u_glow, 0.4, 2.0) / 2.0);
-  col = clamp(col / (col * 0.26 + 0.74), 0.0, 1.0);
+  // Light theme: hotter disks / sharper cores against white
+  col *= mix(1.0, 1.22, u_light);
+  col = clamp(col / (col * mix(0.26, 0.18, u_light) + mix(0.74, 0.82, u_light)), 0.0, 1.0);
   float core = smoothstep(diskSpan * 2.0, diskSpan * 0.35, dNear);
   float nearA = hit.a * mix(mix(0.55, 0.7, u_mobile), 1.0, core);
   vec4 nearCol = vec4(col * nearA, nearA);
@@ -496,6 +501,82 @@ function strategyPaintedRect(): {
   };
 }
 
+type ViewRect = { left: number; top: number; w: number; h: number };
+
+/** Free handle range that stays on-screen and clear of the opaque settings panel. */
+function panelAwareHandleBounds(
+  vis: ViewRect,
+  hs: number,
+  edgeMargin: number,
+  panel: DOMRect | null,
+  mobile: boolean
+): { minX: number; maxX: number; minY: number; maxY: number } {
+  let minX = vis.left + edgeMargin - hs * 0.5;
+  let maxX = vis.left + vis.w - edgeMargin - hs * 0.5;
+  let minY = vis.top + edgeMargin - hs * 0.5;
+  let maxY = vis.top + vis.h - edgeMargin - hs * 0.5;
+
+  if (!panel || panel.width < 8 || panel.height < 8) {
+    return { minX, maxX, minY, maxY };
+  }
+
+  // Keep cores out from under the dialog; glow may tuck slightly
+  const pad = Math.max(28, Math.min(56, Math.min(vis.w, vis.h) * 0.05));
+  const bottomSheet =
+    mobile ||
+    panel.top > vis.top + vis.h * 0.4 ||
+    panel.bottom > vis.top + vis.h * 0.62;
+
+  if (bottomSheet) {
+    maxY = Math.min(maxY, panel.top - pad - hs * 0.5);
+  } else {
+    const rightMinX = panel.right + pad - hs * 0.5;
+    const belowMinY = panel.bottom + pad - hs * 0.5;
+    const rightSpan = maxX - Math.max(minX, rightMinX);
+    const belowSpan = maxY - Math.max(minY, belowMinY);
+    // Prefer the larger free region so BH never gets shoved off-screen
+    if (rightSpan >= belowSpan && rightSpan > 48) {
+      minX = Math.max(minX, rightMinX);
+    } else if (belowSpan > 48) {
+      minY = Math.max(minY, belowMinY);
+    } else if (rightSpan > 0) {
+      minX = Math.max(minX, rightMinX);
+    } else if (belowSpan > 0) {
+      minY = Math.max(minY, belowMinY);
+    }
+  }
+
+  return { minX, maxX, minY, maxY };
+}
+
+function clampIntoBounds(
+  x: number,
+  y: number,
+  bounds: { minX: number; maxX: number; minY: number; maxY: number },
+  vis: ViewRect,
+  hs: number
+): { x: number; y: number } {
+  let { minX, maxX, minY, maxY } = bounds;
+  if (minX > maxX) {
+    const mid = vis.left + vis.w * 0.62 - hs * 0.5;
+    minX = maxX = Math.max(
+      vis.left + 8,
+      Math.min(mid, vis.left + vis.w - hs - 8)
+    );
+  }
+  if (minY > maxY) {
+    const mid = vis.top + vis.h * 0.4 - hs * 0.5;
+    minY = maxY = Math.max(
+      vis.top + 8,
+      Math.min(mid, vis.top + vis.h - hs - 8)
+    );
+  }
+  return {
+    x: Math.max(minX, Math.min(maxX, x)),
+    y: Math.max(minY, Math.min(maxY, y)),
+  };
+}
+
 export default function FloatingBlackHole() {
   const { settings, panelOpen } = useBlackHole();
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -512,45 +593,45 @@ export default function FloatingBlackHole() {
   });
   const dragRef = useRef({ active: false, ox: 0, oy: 0 });
 
-  // When settings panel opens, park BH in the upper clear zone (any screen)
+  // When settings open, park BH in the largest clear on-screen region (never off-canvas)
   useEffect(() => {
     const handle = handleRef.current;
     if (!handle || !panelOpen) return;
-    const vv = window.visualViewport;
-    const w = Math.floor(vv?.width ?? window.innerWidth);
-    const h = Math.floor(vv?.height ?? window.innerHeight);
-    const hs = handle.offsetWidth || 56;
-    const mobile =
-      window.matchMedia("(pointer: coarse)").matches || w <= 640;
-    const margin = Math.min(
-      visualRadiusPx(settingsRef.current, h, mobile),
-      Math.min(w, h) * 0.22
-    );
-    const panel = document.getElementById("bh-settings-panel");
-    const panelTop = panel
-      ? panel.getBoundingClientRect().top
-      : h * (mobile ? 0.54 : 0.45);
-    const panelBottom = panel
-      ? panel.getBoundingClientRect().bottom
-      : h * 0.2;
-    // Desktop panel hangs under top-left controls; mobile sheet is bottom
-    const maxY = mobile
-      ? Math.max(8, panelTop - margin - hs * 0.5)
-      : Math.max(8, h - margin - hs);
-    const minY = mobile
-      ? margin - hs * 0.5
-      : Math.max(8, panelBottom + margin - hs * 0.5);
-    const targetX = Math.max(
-      margin - hs * 0.5,
-      Math.min(w * 0.58 - hs * 0.5, w - margin - hs * 0.5)
-    );
-    const targetY = Math.max(
-      minY,
-      Math.min(maxY, h * (mobile ? 0.28 : 0.42) - hs * 0.5)
-    );
-    posRef.current.x = targetX;
-    posRef.current.y = targetY;
-    handle.style.transform = `translate3d(${posRef.current.x}px, ${posRef.current.y}px, 0)`;
+
+    let cancelled = false;
+    const park = () => {
+      if (cancelled) return;
+      const vv = window.visualViewport;
+      const vis: ViewRect = {
+        left: Math.floor(vv?.offsetLeft ?? 0),
+        top: Math.floor(vv?.offsetTop ?? 0),
+        w: Math.floor(vv?.width ?? window.innerWidth),
+        h: Math.floor(vv?.height ?? window.innerHeight),
+      };
+      const hs = handle.offsetWidth || 56;
+      const mobile =
+        window.matchMedia("(pointer: coarse)").matches || vis.w <= 640;
+      const softMargin = Math.min(
+        Math.max(visualRadiusPx(settingsRef.current, vis.h, mobile) * 0.55, 48),
+        Math.min(vis.w, vis.h) * 0.18
+      );
+      const panel = document.getElementById("bh-settings-panel");
+      const pr = panel?.getBoundingClientRect() ?? null;
+      const bounds = panelAwareHandleBounds(vis, hs, softMargin, pr, mobile);
+      const preferredX = vis.left + vis.w * (mobile ? 0.5 : 0.64) - hs * 0.5;
+      const preferredY = vis.top + vis.h * (mobile ? 0.3 : 0.48) - hs * 0.5;
+      const next = clampIntoBounds(preferredX, preferredY, bounds, vis, hs);
+      posRef.current.x = next.x;
+      posRef.current.y = next.y;
+      handle.style.transform = `translate3d(${next.x}px, ${next.y}px, 0)`;
+    };
+
+    // Wait for dialog layout so getBoundingClientRect is accurate
+    const id = requestAnimationFrame(() => requestAnimationFrame(park));
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(id);
+    };
   }, [panelOpen]);
 
   useEffect(() => {
@@ -630,9 +711,6 @@ export default function FloatingBlackHole() {
     let needsResize = true;
     let lightMode = isLightTheme() ? 1 : 0;
     let pausedDrawn = false;
-    let emaDt = 16.6;
-    let lastFrame = performance.now();
-    let renderScale = 1;
     let lastW = 0;
     let lastH = 0;
     let lastCssW = 0;
@@ -641,7 +719,9 @@ export default function FloatingBlackHole() {
     let scaleDirty = true;
     let lastScaleKey = "";
     let cachedScale = 1;
-    let scaleAdaptCooldown = 0;
+    let placeTries = 0;
+    let placeRetryAt = 0;
+    let cachedHs = mobile ? 64 : 56;
 
     // Cover the full layout viewport so the canvas box never crops the effect
     const viewSize = () => ({
@@ -663,30 +743,30 @@ export default function FloatingBlackHole() {
       handle.style.transform = `translate3d(${posRef.current.x}px, ${posRef.current.y}px, 0)`;
     };
 
+    const handleSize = () => {
+      const w = handle.offsetWidth;
+      if (w > 0) cachedHs = w;
+      return cachedHs;
+    };
+
     /** Keep binary center inset so disks never hit the viewport edge. */
     const clampHandle = (scaleMul = 1) => {
       const vis = visibleBounds();
-      const hs = handle.offsetWidth || (mobile ? 64 : 56);
+      const hs = handleSize();
       const s = settingsRef.current;
       const minDim = Math.min(vis.w, vis.h);
-      // ~3× previous default; still clamped so disks stay on-screen
       const sizeCap = Math.min(minDim * 0.48, Math.max(220, minDim * 0.42));
-      let margin = Math.min(
-        Math.max(visualRadiusPx(s, vis.h, mobile, scaleMul), minDim * 0.14),
-        sizeCap
-      );
       const maxMarginX = Math.max(24, vis.w * 0.24);
       const maxMarginY = Math.max(28, vis.h * 0.34);
       let fit = scaleMul;
-      // Shrink render scale until estimated radius fits the size cap
-      for (let i = 0; i < 8; i++) {
+      for (let i = 0; i < 6; i++) {
         const raw = visualRadiusPx(s, vis.h, mobile, fit);
         const need = Math.max(raw / sizeCap, raw / maxMarginX, raw / maxMarginY, 1);
         if (need <= 1.001) break;
-        fit = Math.max(0.4, fit / need);
+        fit = Math.max(0.45, fit / need);
       }
       fitMul = fit;
-      margin = Math.min(
+      const margin = Math.min(
         Math.max(visualRadiusPx(s, vis.h, mobile, fit), minDim * 0.1 * fit),
         sizeCap,
         maxMarginX,
@@ -698,40 +778,43 @@ export default function FloatingBlackHole() {
       let maxX = vis.left + vis.w - margin - hs * 0.5;
       let minY = vis.top + margin - hs * 0.5;
 
-      // Keep clear of the open settings panel on every screen size
       if (panelOpenRef.current) {
         const panel = document.getElementById("bh-settings-panel");
-        const pr = panel?.getBoundingClientRect();
-        if (pr && pr.height > 0) {
-          // Mobile bottom sheet: keep BH above it
-          if (vis.w <= 640 || pr.bottom > vis.top + vis.h * 0.55) {
-            maxY = Math.min(maxY, pr.top - margin - hs * 0.5);
-          } else {
-            // Desktop top-left panel: keep BH below + to the right
-            minY = Math.max(minY, pr.bottom + margin - hs * 0.5);
-            minX = Math.max(minX, pr.right + margin - hs * 0.5);
-          }
-        } else {
-          maxY = Math.min(maxY, vis.top + vis.h * 0.42);
-        }
+        const pr = panel?.getBoundingClientRect() ?? null;
+        // Softer edge margin while panel is open so BH still fits beside it
+        const softMargin = Math.min(margin * 0.62, Math.min(vis.w, vis.h) * 0.16);
+        minX = vis.left + softMargin - hs * 0.5;
+        maxX = vis.left + vis.w - softMargin - hs * 0.5;
+        minY = vis.top + softMargin - hs * 0.5;
+        maxY = vis.top + vis.h - softMargin - hs * 0.5;
+        const b = panelAwareHandleBounds(vis, hs, softMargin, pr, mobile);
+        minX = b.minX;
+        maxX = b.maxX;
+        minY = b.minY;
+        maxY = b.maxY;
       }
 
-      // Prefer left / under-strategy side when the clamp range collapses
       const leftBias = vis.left + vis.w * (mobile ? 0.22 : 0.2) - hs * 0.5;
       let x = posRef.current.x;
       let y = posRef.current.y;
-      if (minX > maxX) {
+      if (panelOpenRef.current) {
+        const next = clampIntoBounds(x, y, { minX, maxX, minY, maxY }, vis, hs);
+        x = next.x;
+        y = next.y;
+      } else if (minX > maxX) {
         x = Math.max(vis.left + 4, Math.min(leftBias, vis.left + vis.w - hs - 4));
       } else {
         x = Math.max(minX, Math.min(maxX, x));
       }
-      if (minY > maxY) {
-        y = Math.max(
-          vis.top + 4,
-          Math.min(maxY, vis.top + vis.h * 0.55 - hs * 0.5)
-        );
-      } else {
-        y = Math.max(minY, Math.min(maxY, y));
+      if (!panelOpenRef.current) {
+        if (minY > maxY) {
+          y = Math.max(
+            vis.top + 4,
+            Math.min(maxY, vis.top + vis.h * 0.55 - hs * 0.5)
+          );
+        } else {
+          y = Math.max(minY, Math.min(maxY, y));
+        }
       }
 
       if (x !== posRef.current.x || y !== posRef.current.y) {
@@ -739,35 +822,46 @@ export default function FloatingBlackHole() {
         posRef.current.y = y;
         applyHandleTransform();
       }
-      scaleDirty = true;
       return fitMul;
     };
 
+    const recomputeScale = () => {
+      const s = settingsRef.current;
+      clampHandle(1);
+      cachedScale =
+        (mobile
+          ? 3.6 + ((s.size - 160) / 200) * 1.2
+          : 3.2 + ((s.size - 160) / 200) * 1.4) * fitMul;
+      lastScaleKey = `${s.size}|${s.binary ? 1 : 0}|${s.mode}|${mobile ? 1 : 0}`;
+      scaleDirty = false;
+    };
+
     const placeHandleDefault = () => {
+      if (posRef.current.underStrategy) return;
+
       const vis = visibleBounds();
-      const hs = handle.offsetWidth || (mobile ? 64 : 56);
+      const hs = handleSize();
       const content = strategyPaintedRect();
 
-      // Strategy mounts a beat later — keep retrying until we can sit under it
       if (!content) {
+        placeTries += 1;
         if (!posRef.current.ready) {
           const topPad = mobile ? 130 : 144;
           posRef.current.x = vis.left + vis.w * (mobile ? 0.2 : 0.18) - hs * 0.5;
           posRef.current.y =
             vis.top + topPad + Math.min(220, vis.h * 0.28) - hs * 0.5;
           applyHandleTransform();
+          posRef.current.ready = true;
         }
-        clampHandle(1);
-        return;
-      }
-
-      if (posRef.current.underStrategy) {
-        clampHandle(1);
+        // Stop hammering layout after ~1.5s — lock provisional spot
+        if (placeTries > 90) {
+          posRef.current.underStrategy = true;
+          scaleDirty = true;
+        }
         return;
       }
 
       const gap = mobile ? 18 : 28;
-      // Clear the Strategy wordmark without shoving BH to screen center
       const clearance = mobile ? 56 : 72;
       const cx = content.left + content.width * 0.5;
       let cy = content.bottom + gap + clearance;
@@ -780,16 +874,17 @@ export default function FloatingBlackHole() {
       posRef.current.underStrategy = true;
       clampHandle(1);
       applyHandleTransform();
+      scaleDirty = true;
     };
 
     const resize = () => {
       const { w: cssW, h: cssH } = viewSize();
-      // Cap DPR for cost; 1.75 still looks sharp on retina without 4× fill-rate
-      const dprCap = low ? 1.5 : 1.75;
-      const dpr = Math.min(window.devicePixelRatio || 1, dprCap) * renderScale;
+      // Fixed DPR budget — no adaptive thrashing
+      const dprCap = low ? 1 : 1.25;
+      const dpr = Math.min(window.devicePixelRatio || 1, dprCap);
       let w = Math.max(1, Math.floor(cssW * dpr));
       let h = Math.max(1, Math.floor(cssH * dpr));
-      const maxPix = low ? 1.8e6 : 2.8e6;
+      const maxPix = low ? 0.85e6 : 1.5e6;
       if (w * h > maxPix) {
         const s = Math.sqrt(maxPix / (w * h));
         w = Math.max(1, Math.floor(w * s));
@@ -810,21 +905,22 @@ export default function FloatingBlackHole() {
       canvas.style.height = `${cssH}px`;
       needsResize = false;
       pausedDrawn = false;
-      scaleDirty = true;
       if (
         (cssW !== lastCssW || cssH !== lastCssH) &&
         !dragRef.current.active
       ) {
         posRef.current.underStrategy = false;
+        placeTries = 0;
       }
       lastCssW = cssW;
       lastCssH = cssH;
       placeHandleDefault();
+      scaleDirty = true;
     };
 
     const anchorFromPos = () => {
       const { w, h } = viewSize();
-      const hs = handle.offsetWidth || (mobile ? 64 : 56);
+      const hs = cachedHs;
       const cx = posRef.current.x + hs * 0.5;
       const cy = posRef.current.y + hs * 0.5;
       const aspect = w / Math.max(h, 1);
@@ -833,48 +929,34 @@ export default function FloatingBlackHole() {
       return [nx, ny] as const;
     };
 
+    let resizeTimer = 0;
     const onResize = () => {
-      needsResize = true;
+      // Debounce visualViewport spam (mobile URL bar)
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(() => {
+        needsResize = true;
+      }, 80);
     };
     window.addEventListener("resize", onResize, { passive: true });
     window.visualViewport?.addEventListener("resize", onResize, { passive: true });
     window.visualViewport?.addEventListener("scroll", onResize, { passive: true });
 
     const draw = (now: number) => {
+      raf = requestAnimationFrame(draw);
       const base = settingsRef.current;
-      if (!visible || !base.enabled) {
-        raf = requestAnimationFrame(draw);
-        return;
-      }
-
-      const dt = now - lastFrame;
-      lastFrame = now;
-      if (dt > 0 && dt < 80) {
-        emaDt = emaDt * 0.9 + dt * 0.1;
-        // Rare, stepped scale adapt — continuous resize was causing lag/jank
-        if (scaleAdaptCooldown > 0) scaleAdaptCooldown -= 1;
-        else if (emaDt > 26 && renderScale > 0.9) {
-          renderScale = Math.max(0.9, Math.round((renderScale - 0.05) * 100) / 100);
-          scaleAdaptCooldown = 90;
-          needsResize = true;
-        } else if (emaDt < 14 && renderScale < 1) {
-          renderScale = Math.min(1, Math.round((renderScale + 0.05) * 100) / 100);
-          scaleAdaptCooldown = 120;
-          needsResize = true;
-        }
-      }
+      if (!visible || !base.enabled) return;
 
       if (needsResize) resize();
-      else if (!posRef.current.underStrategy) placeHandleDefault();
+      else if (!posRef.current.underStrategy && now >= placeRetryAt) {
+        placeHandleDefault();
+        placeRetryAt = now + 50; // ~20Hz placement retries max
+      }
 
       let t = (now - start) / 1000;
       if (!base.play) {
         if (!pausedAt) pausedAt = t;
         t = pausedAt;
-        if (pausedDrawn) {
-          raf = requestAnimationFrame(draw);
-          return;
-        }
+        if (pausedDrawn) return;
       } else if (pausedAt) {
         start = now - pausedAt * 1000;
         pausedAt = 0;
@@ -884,15 +966,12 @@ export default function FloatingBlackHole() {
 
       const s = base.mode === "auto" ? autoParams(base, t) : base;
       const scaleKey = `${s.size}|${s.binary ? 1 : 0}|${s.mode}|${mobile ? 1 : 0}`;
-      if (scaleDirty || scaleKey !== lastScaleKey) {
-        // Recompute fit only when size/layout changes — not every frame
-        clampHandle(1);
-        cachedScale =
-          (mobile
-            ? 3.6 + ((s.size - 160) / 200) * 1.2
-            : 3.2 + ((s.size - 160) / 200) * 1.4) * fitMul;
-        lastScaleKey = scaleKey;
-        scaleDirty = false;
+      if (
+        scaleDirty ||
+        scaleKey !== lastScaleKey ||
+        (panelOpenRef.current && !dragRef.current.active)
+      ) {
+        recomputeScale();
       }
       const scale = cachedScale;
       const [ax, ay] = anchorFromPos();
@@ -910,7 +989,7 @@ export default function FloatingBlackHole() {
       gl.uniform1f(uni.sky, s.sky);
       gl.uniform1f(uni.orbit, s.mode === "auto" ? 0.22 : 0.14);
       gl.uniform1f(uni.scale, scale);
-      gl.uniform1f(uni.quality, low ? 0.9 : 1);
+      gl.uniform1f(uni.quality, low ? 0.75 : 0.92);
       gl.uniform1f(uni.light, lightMode);
       gl.uniform1f(uni.mobile, mobile ? 1 : 0);
       gl.uniform4f(uni.bh1, s.bh1.radius, s.bh1.spin, s.bh1.diskInner, s.bh1.diskOuter);
@@ -920,7 +999,6 @@ export default function FloatingBlackHole() {
       gl.drawArrays(gl.TRIANGLES, 0, 6);
 
       if (!base.play) pausedDrawn = true;
-      raf = requestAnimationFrame(draw);
     };
 
     placeHandleDefault();
@@ -950,13 +1028,14 @@ export default function FloatingBlackHole() {
       e.preventDefault();
       posRef.current.x = e.clientX - dragRef.current.ox;
       posRef.current.y = e.clientY - dragRef.current.oy;
-      clampHandle(1);
       applyHandleTransform();
     };
     const onUp = (e: PointerEvent) => {
       if (!dragRef.current.active) return;
       dragRef.current.active = false;
       handle.classList.remove("is-dragging");
+      clampHandle(1);
+      applyHandleTransform();
       try {
         handle.releasePointerCapture(e.pointerId);
       } catch {
@@ -987,6 +1066,7 @@ export default function FloatingBlackHole() {
 
     return () => {
       cancelAnimationFrame(raf);
+      window.clearTimeout(resizeTimer);
       window.removeEventListener("resize", onResize);
       window.visualViewport?.removeEventListener("resize", onResize);
       window.visualViewport?.removeEventListener("scroll", onResize);
