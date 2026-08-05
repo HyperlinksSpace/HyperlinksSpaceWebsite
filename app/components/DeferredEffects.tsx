@@ -68,15 +68,18 @@ export default function DeferredEffects({ links }: { links: string[] }) {
       if (!cancelled) setShowCursor(true);
     };
 
-    window.addEventListener("pointermove", enableCursor, {
-      once: true,
-      passive: true,
-    });
-    const cursorTimer = window.setTimeout(enableCursor, low ? 5000 : 2500);
-    cleanups.push(() => {
-      window.clearTimeout(cursorTimer);
-      window.removeEventListener("pointermove", enableCursor);
-    });
+    // Skip cursor canvas on coarse pointers — big mobile savings, no quality hit to BH
+    if (!window.matchMedia("(pointer: coarse)").matches) {
+      window.addEventListener("pointermove", enableCursor, {
+        once: true,
+        passive: true,
+      });
+      const cursorTimer = window.setTimeout(enableCursor, low ? 5000 : 2500);
+      cleanups.push(() => {
+        window.clearTimeout(cursorTimer);
+        window.removeEventListener("pointermove", enableCursor);
+      });
+    }
 
     return () => {
       cancelled = true;

@@ -36,14 +36,14 @@ export type BlackHoleSettings = {
   bh2: BlackHoleBody;
 };
 
-const STORAGE_KEY = "hyperlinks-blackhole-v7";
+const STORAGE_KEY = "hyperlinks-blackhole-v11";
 
 export const DEFAULT_BLACK_HOLE: BlackHoleSettings = {
   enabled: true,
   binary: true,
   play: true,
   mode: "auto",
-  size: 200,
+  size: 360,
   separation: 0.68,
   perspective: 1.1,
   glow: 1.3,
@@ -94,7 +94,7 @@ function normalize(raw: Partial<BlackHoleSettings> | null): BlackHoleSettings {
     binary: Boolean(base.binary),
     play: Boolean(base.play),
     mode: base.mode === "manual" ? "manual" : "auto",
-    size: Math.min(320, Math.max(160, Number(base.size) || DEFAULT_BLACK_HOLE.size)),
+    size: Math.min(360, Math.max(160, Number(base.size) || DEFAULT_BLACK_HOLE.size)),
     separation: Math.min(1.15, Math.max(0.35, Number(base.separation) || DEFAULT_BLACK_HOLE.separation)),
     perspective: Math.min(2, Math.max(0.7, Number(base.perspective) || DEFAULT_BLACK_HOLE.perspective)),
     glow: Math.min(2, Math.max(0.4, Number(base.glow) || DEFAULT_BLACK_HOLE.glow)),

@@ -3,6 +3,69 @@
 import { useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useBlackHole, type BlackHoleBody } from "./BlackHoleContext";
+import { useLanguage } from "./LanguageContext";
+
+const COPY = {
+  en: {
+    panelAria: "Black hole controls",
+    title: "Black hole",
+    close: "Close",
+    closeAria: "Close settings",
+    modeAria: "Tuning mode",
+    auto: "Auto",
+    manual: "Manual",
+    visible: "Visible",
+    binary: "Binary",
+    play: "Play",
+    autoHint: "Auto-tunes orbit, disks, lensed sky, and glow over time.",
+    coreSize: "Core size",
+    separation: "Separation",
+    perspective: "Perspective",
+    glow: "Glow",
+    sky: "Sky / lensing",
+    speed: "Speed",
+    hole1: "Black hole 1",
+    hole2: "Black hole 2",
+    radius: "Radius",
+    spin: "Spin",
+    diskInner: "Disk inner (rₛ)",
+    diskOuter: "Disk outer (rₛ)",
+    hue: "Hue",
+    reset: "Reset defaults",
+    toggleAria: "Black hole settings",
+  },
+  ru: {
+    panelAria: "Настройки чёрной дыры",
+    title: "Чёрная дыра",
+    close: "Закрыть",
+    closeAria: "Закрыть настройки",
+    modeAria: "Режим настройки",
+    auto: "Авто",
+    manual: "Вручную",
+    visible: "Видимость",
+    binary: "Двойная",
+    play: "Воспроизведение",
+    autoHint:
+      "Автоматически подстраивает орбиту, диски, линзированное небо и свечение.",
+    coreSize: "Размер ядра",
+    separation: "Разделение",
+    perspective: "Перспектива",
+    glow: "Свечение",
+    sky: "Небо / линзирование",
+    speed: "Скорость",
+    hole1: "Чёрная дыра 1",
+    hole2: "Чёрная дыра 2",
+    radius: "Радиус",
+    spin: "Вращение",
+    diskInner: "Внутр. диск (rₛ)",
+    diskOuter: "Внеш. диск (rₛ)",
+    hue: "Оттенок",
+    reset: "Сбросить",
+    toggleAria: "Настройки чёрной дыры",
+  },
+} as const;
+
+type BhCopy = (typeof COPY)[keyof typeof COPY];
 
 function SliderRow({
   label,
@@ -45,17 +108,19 @@ function BodyControls({
   body,
   onChange,
   disabled,
+  t,
 }: {
   title: string;
   body: BlackHoleBody;
   onChange: (next: BlackHoleBody) => void;
   disabled?: boolean;
+  t: BhCopy;
 }) {
   return (
     <fieldset className="bhFieldset" disabled={disabled}>
       <legend>{title}</legend>
       <SliderRow
-        label="Radius"
+        label={t.radius}
         value={body.radius}
         min={0.08}
         max={0.42}
@@ -64,7 +129,7 @@ function BodyControls({
         onChange={(radius) => onChange({ ...body, radius })}
       />
       <SliderRow
-        label="Spin"
+        label={t.spin}
         value={body.spin}
         min={-1.8}
         max={1.8}
@@ -73,7 +138,7 @@ function BodyControls({
         onChange={(spin) => onChange({ ...body, spin })}
       />
       <SliderRow
-        label="Disk inner (rₛ)"
+        label={t.diskInner}
         value={body.diskInner}
         min={1.2}
         max={2.2}
@@ -82,7 +147,7 @@ function BodyControls({
         onChange={(diskInner) => onChange({ ...body, diskInner })}
       />
       <SliderRow
-        label="Disk outer (rₛ)"
+        label={t.diskOuter}
         value={body.diskOuter}
         min={2.5}
         max={9}
@@ -91,7 +156,7 @@ function BodyControls({
         onChange={(diskOuter) => onChange({ ...body, diskOuter })}
       />
       <SliderRow
-        label="Hue"
+        label={t.hue}
         value={body.hue}
         min={0}
         max={359}
@@ -141,6 +206,8 @@ function BlackHoleIcon() {
 export default function SiteSettings() {
   const { settings, setSettings, resetSettings, panelOpen, setPanelOpen } =
     useBlackHole();
+  const { language } = useLanguage();
+  const t = COPY[language] ?? COPY.en;
   const manual = settings.mode === "manual";
 
   useEffect(() => {
@@ -153,28 +220,29 @@ export default function SiteSettings() {
       id="bh-settings-panel"
       className="bhSettingsPanel"
       role="dialog"
-      aria-label="Black hole controls"
+      aria-label={t.panelAria}
+      lang={language}
     >
       <div className="bhSettingsHead">
-        <strong>Black hole</strong>
+        <strong>{t.title}</strong>
         <button
           type="button"
           className="bhPanelClose"
-          aria-label="Close settings"
+          aria-label={t.closeAria}
           onClick={() => setPanelOpen(false)}
         >
-          Close
+          {t.close}
         </button>
       </div>
 
-      <div className="bhModeRow" role="group" aria-label="Tuning mode">
+      <div className="bhModeRow" role="group" aria-label={t.modeAria}>
         <button
           type="button"
           className={`bhModeBtn${settings.mode === "auto" ? " is-active" : ""}`}
           aria-pressed={settings.mode === "auto"}
           onClick={() => setSettings((s) => ({ ...s, mode: "auto" }))}
         >
-          Auto
+          {t.auto}
         </button>
         <button
           type="button"
@@ -182,7 +250,7 @@ export default function SiteSettings() {
           aria-pressed={settings.mode === "manual"}
           onClick={() => setSettings((s) => ({ ...s, mode: "manual" }))}
         >
-          Manual
+          {t.manual}
         </button>
       </div>
 
@@ -195,7 +263,7 @@ export default function SiteSettings() {
               setSettings((s) => ({ ...s, enabled: e.target.checked }))
             }
           />
-          Visible
+          {t.visible}
         </label>
         <label className="bhCheck">
           <input
@@ -205,7 +273,7 @@ export default function SiteSettings() {
               setSettings((s) => ({ ...s, binary: e.target.checked }))
             }
           />
-          Binary
+          {t.binary}
         </label>
         <label className="bhCheck">
           <input
@@ -215,26 +283,22 @@ export default function SiteSettings() {
               setSettings((s) => ({ ...s, play: e.target.checked }))
             }
           />
-          Play
+          {t.play}
         </label>
       </div>
 
-      {!manual ? (
-        <p className="bhAutoHint">
-          Auto-tunes orbit, disks, lensed sky, and glow over time.
-        </p>
-      ) : null}
+      {!manual ? <p className="bhAutoHint">{t.autoHint}</p> : null}
 
       <SliderRow
-        label="Core size"
+        label={t.coreSize}
         value={settings.size}
         min={160}
-        max={320}
+        max={360}
         step={4}
         onChange={(size) => setSettings((s) => ({ ...s, size }))}
       />
       <SliderRow
-        label="Separation"
+        label={t.separation}
         value={settings.separation}
         min={0.35}
         max={1.15}
@@ -243,7 +307,7 @@ export default function SiteSettings() {
         onChange={(separation) => setSettings((s) => ({ ...s, separation }))}
       />
       <SliderRow
-        label="Perspective"
+        label={t.perspective}
         value={settings.perspective}
         min={0.7}
         max={2}
@@ -252,7 +316,7 @@ export default function SiteSettings() {
         onChange={(perspective) => setSettings((s) => ({ ...s, perspective }))}
       />
       <SliderRow
-        label="Glow"
+        label={t.glow}
         value={settings.glow}
         min={0.4}
         max={2}
@@ -261,7 +325,7 @@ export default function SiteSettings() {
         onChange={(glow) => setSettings((s) => ({ ...s, glow }))}
       />
       <SliderRow
-        label="Sky / lensing"
+        label={t.sky}
         value={settings.sky}
         min={0}
         max={1.4}
@@ -270,7 +334,7 @@ export default function SiteSettings() {
         onChange={(sky) => setSettings((s) => ({ ...s, sky }))}
       />
       <SliderRow
-        label="Speed"
+        label={t.speed}
         value={settings.speed}
         min={0.15}
         max={2.2}
@@ -279,22 +343,24 @@ export default function SiteSettings() {
       />
 
       <BodyControls
-        title="Black hole 1"
+        title={t.hole1}
         body={settings.bh1}
         disabled={!manual}
+        t={t}
         onChange={(bh1) => setSettings((s) => ({ ...s, bh1 }))}
       />
       {settings.binary ? (
         <BodyControls
-          title="Black hole 2"
+          title={t.hole2}
           body={settings.bh2}
           disabled={!manual}
+          t={t}
           onChange={(bh2) => setSettings((s) => ({ ...s, bh2 }))}
         />
       ) : null}
 
       <button type="button" className="bhReset" onClick={resetSettings}>
-        Reset defaults
+        {t.reset}
       </button>
     </div>
   ) : null;
@@ -305,7 +371,7 @@ export default function SiteSettings() {
         <button
           type="button"
           className={`themeSwitchBtn bhSettingsToggle${panelOpen ? " is-active" : ""}`}
-          aria-label="Black hole settings"
+          aria-label={t.toggleAria}
           aria-expanded={panelOpen}
           aria-controls="bh-settings-panel"
           onClick={() => setPanelOpen(!panelOpen)}

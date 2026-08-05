@@ -32,8 +32,8 @@ interface Particle {
 /** Discrete brand triad — no yellow wash from hue lerps */
 const BRAND = {
   green: 145,
-  orange: 28,
-  blue: 215,
+  orange: 24,
+  blue: 218,
 } as const;
 
 const BRAND_LIST = [BRAND.green, BRAND.orange, BRAND.blue] as const;
@@ -50,16 +50,16 @@ type Paint = {
 function resolvePaint(): Paint {
   if (typeof document === "undefined") {
     return {
-      dark: false,
-      sat: 96,
-      light: 52,
-      alphaMul: 1,
-      fade: "rgba(242, 250, 245, 0.18)",
-      blend: "multiply",
+      dark: true,
+      sat: 100,
+      light: 62,
+      alphaMul: 1.15,
+      fade: "rgba(4, 7, 6, 0.22)",
+      blend: "screen",
     };
   }
   const dark =
-    document.documentElement.getAttribute("data-theme") === "dark";
+    document.documentElement.getAttribute("data-theme") !== "light";
   return dark
     ? {
         dark: true,
@@ -70,12 +70,13 @@ function resolvePaint(): Paint {
         blend: "screen",
       }
     : {
+        // Light theme: source-over + brighter pastels — multiply was muddying to olive/brown
         dark: false,
-        sat: 96,
-        light: 48,
-        alphaMul: 1,
-        fade: "rgba(242, 250, 245, 0.2)",
-        blend: "multiply",
+        sat: 78,
+        light: 52,
+        alphaMul: 0.78,
+        fade: "rgba(255, 255, 255, 0.26)",
+        blend: "source-over",
       };
 }
 
@@ -85,12 +86,23 @@ function brandHue(t: number, salt = 0): number {
   return BRAND_LIST[(idx + 3) % 3];
 }
 
-function hs(
-  hue: number,
-  a: number,
-  paint: Paint
-): string {
-  return `hsla(${hue}, ${paint.sat}%, ${paint.light}%, ${Math.min(1, a * paint.alphaMul)})`;
+function hs(hue: number, a: number, paint: Paint): string {
+  let sat = paint.sat;
+  let light = paint.light;
+  if (!paint.dark) {
+    // Per-brand lift so emerald/orange/blue stay jewel-clean on cream
+    if (hue >= 120 && hue <= 170) {
+      sat = 72;
+      light = 46;
+    } else if (hue <= 40) {
+      sat = 86;
+      light = 54;
+    } else {
+      sat = 74;
+      light = 52;
+    }
+  }
+  return `hsla(${hue}, ${sat}%, ${light}%, ${Math.min(1, a * paint.alphaMul)})`;
 }
 
 export default function CursorSmudge() {

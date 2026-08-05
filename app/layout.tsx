@@ -17,7 +17,7 @@ import { BlackHoleProvider } from "./components/BlackHoleContext";
 import { getStickerLinks, SITE_LINKS } from "./siteLinks";
 import "./globals.css";
 
-const themeInitScript = `(function(){try{var k='hyperlinks-theme';var t=localStorage.getItem(k);var dark=t==='dark'||(t!=='light'&&window.matchMedia('(prefers-color-scheme: dark)').matches);var r=dark?'dark':'light';var p=(t==='light'||t==='dark')?t:'system';document.documentElement.setAttribute('data-theme',r);document.documentElement.setAttribute('data-theme-pref',p);}catch(e){}})();`;
+const themeInitScript = `(function(){try{var k='hyperlinks-theme';var t=localStorage.getItem(k);var r=t==='light'?'light':'dark';var p=(t==='light'||t==='dark')?t:'dark';document.documentElement.setAttribute('data-theme',r);document.documentElement.setAttribute('data-theme-pref',p);}catch(e){document.documentElement.setAttribute('data-theme','dark');document.documentElement.setAttribute('data-theme-pref','dark');}})();`;
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -43,32 +43,32 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
-/** Top logo (HyperlinksSpace): max px cap + max vw cap (see `.siteLogoOverlay` in globals.css) */
+/** Top logo (HyperlinksSpace): max px cap + max vw cap */
 const SITE_LOGO_SIZE = {
-  topPx: 20,
-  maxWidthPx: 100,
-  maxViewportWidthPercent: 30,
+  topPx: 12,
+  maxWidthPx: 160,
+  maxViewportWidthPercent: 36,
 } as const;
 
 /**
- * Side wordmarks: fluid width is `min(maxWidthPx, max(60vw, …))` in globals.css.
- * Vertical offset uses clamp() — no hard mobile breakpoint.
+ * Side wordmarks stay in opposite corners and never cross mid-screen.
+ * Width is capped by CSS with vw/vh so they remain readable but non-overlapping.
  */
 const SITE_STRATEGY_SIZE = {
-  leftPx: 12,
-  maxWidthPx: 500,
+  leftPx: 10,
+  maxWidthPx: 560,
 } as const;
 
 const SITE_AITYAAHN_SIZE = {
-  rightPx: 16,
-  maxWidthPx: 420,
+  rightPx: 12,
+  maxWidthPx: 480,
 } as const;
 
 /** Bottom ad banner: edit these to change size/position (see `.siteAdOverlay*` in globals.css). */
 const SITE_AD_SIZE = {
-  bottomPx: 20,
-  maxWidthPx: 481,
-  maxViewportWidthPercent: 77,
+  bottomPx: 16,
+  maxWidthPx: 360,
+  maxViewportWidthPercent: 62,
 } as const;
 
 export default function RootLayout({
