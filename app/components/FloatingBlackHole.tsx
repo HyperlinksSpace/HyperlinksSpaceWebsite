@@ -65,7 +65,10 @@ float noise(vec2 p) {
 }
 
 vec3 diskThermal(float t, float a, float dpl, float time) {
-  float hv = pow(max(t * t * (1.0 - t) * 6.75, 1e-6), 0.25);
+  // Light: broader luminous band so colored disk reads thicker
+  float hvDark = pow(max(t * t * (1.0 - t) * 6.75, 1e-6), 0.25);
+  float hvLight = pow(max(t * (0.35 + 0.65 * t) * (1.15 - 0.45 * t) * 3.4, 1e-6), 0.32);
+  float hv = mix(hvDark, hvLight, u_light);
   float n = noise(vec2((t - time * 0.01) * 20.0, lsa(a + time) * 3.0)) * 2.0 - 1.0;
   float t_noise = clamp(t * (1.0 - n) + n, 0.0, 1.0);
   float d_factor = -dpl * 0.1 + 1.05;
@@ -77,7 +80,15 @@ vec3 diskThermal(float t, float a, float dpl, float time) {
   vec3 acol = vec3(t_half, t_pow5 * 0.6, t_pow20 * 0.3) * t_factor;
   vec3 dcol = (1.0 - acol) * max(dpl, 0.0) * t_noise * hv *
     pow(ls(t * 2.0 + 0.5), 4.0) * vec3(0.5, 0.6, 0.4);
-  return clamp(mix(acol + dcol, vec3(t, 0.0, 0.0), clamp(1.0 - t, 0.0, 1.0)) * 1.4, 0.0, 1.0);
+  vec3 hot = acol + dcol;
+  // Outer disk (low t): black hole → black; white hole → white only at outermost fringe
+  vec3 darkRim = vec3(t, 0.0, 0.0);
+  vec3 lightRim = vec3(1.0, 0.99, 0.98);
+  vec3 rim = mix(darkRim, lightRim, u_light);
+  float rimMix = clamp(1.0 - t, 0.0, 1.0);
+  // Light: bleach only the extreme outer fringe — preserve a thick colored body
+  rimMix = mix(rimMix, pow(smoothstep(0.88, 1.0, rimMix), 1.6), u_light);
+  return clamp(mix(hot, rim, rimMix) * mix(1.4, 1.65, u_light), 0.0, 1.0);
 }
 
 vec3 tintDisk(vec3 thermal, float hueDeg) {
@@ -94,11 +105,11 @@ vec3 sky(vec3 rd) {
   float lon = atan(d.z, d.x);
   float band = exp(-pow((lat - 0.06 * sin(lon * 2.4 + u_time * 0.15)) * 3.0, 2.0));
   vec3 dustDark = vec3(0.02, 0.025, 0.045) + vec3(0.08, 0.05, 0.03) * band;
-  // Light theme: almost no dust haze (haze read as dirt on white)
-  vec3 dustLight = vec3(0.92, 0.96, 1.0) * 0.04 * band;
+  // Light theme: bright pearl haze (dark haze reads as dirty rims on white)
+  vec3 dustLight = vec3(0.93, 0.96, 1.0) * (0.14 + 0.22 * band);
   vec3 dust = mix(dustDark, dustLight, u_light);
-  dust += mix(vec3(0.03, 0.035, 0.06), vec3(0.04, 0.06, 0.1), u_light)
-        * (texture(u_noise, vec2(lon, lat) * 0.4 + u_time * 0.01).r - 0.2);
+  float n = texture(u_noise, vec2(lon, lat) * 0.4 + u_time * 0.01).r - 0.2;
+  dust += mix(vec3(0.03, 0.035, 0.06) * n, vec3(0.12, 0.14, 0.18) * max(n, 0.0), u_light);
 
   vec2 sp = vec2(lon, lat) * 110.0;
   vec2 g = floor(sp);
@@ -106,9 +117,9 @@ vec3 sky(vec3 rd) {
   vec2 p = g + vec2(hash21(g + 17.1), hash21(g + 91.7));
   float star = pow(h, 15.0) * smoothstep(0.05, 0.0, length(sp - p));
   vec3 starDark = vec3(0.9, 0.93, 1.0);
-  vec3 starLight = vec3(0.2, 0.4, 0.85);
+  vec3 starLight = vec3(0.55, 0.7, 0.95);
   vec3 starCol = mix(starDark, starLight, u_light);
-  return (dust * (0.4 + band * 1.15) + starCol * star * mix(1.6, 1.2, u_light)) * u_sky;
+  return (dust * (0.4 + band * 1.15) + starCol * star * mix(1.6, 1.15, u_light)) * u_sky;
 }
 
 vec3 bendResidual(vec3 ro, vec3 rd, vec3 p, float rs) {
@@ -160,22 +171,49 @@ bool hitDisk(
 ) {
   float s1 = dot(oro - center, axis);
   float s2 = dot(ro - center, axis);
-  if (s1 * s2 >= 0.0) return false;
-  float tHit = s1 / (s1 - s2);
+  // Light: fat vertical slab so edge-on disks read as bands, not hairlines
+  float halfT = (innerR + outerR) * 0.07 * u_light;
+  float tHit;
+  if (s1 * s2 < 0.0) {
+    tHit = s1 / (s1 - s2);
+  } else if (halfT > 1e-5 && min(abs(s1), abs(s2)) < halfT) {
+    float ds = s2 - s1;
+    tHit = abs(ds) < 1e-6 ? 0.5 : clamp(-s1 / ds, 0.0, 1.0);
+  } else {
+    return false;
+  }
   if (tHit < 0.0 || tHit > 1.0) return false;
   vec3 p = mix(oro, ro, tHit);
   vec3 rel = p - center;
+  float hAbs = abs(dot(rel, axis));
+  if (halfT > 1e-5 && hAbs > halfT) return false;
   vec3 radial = rel - axis * dot(rel, axis);
   float r = length(radial);
-  if (r < innerR || r > outerR) return false;
+  // Soft radial skirts on light — widen the colorful annulus
+  float rPad = (outerR - innerR) * 0.12 * u_light;
+  if (r < innerR - rPad * 0.35 || r > outerR + rPad) return false;
   float x = dot(radial, u);
   float y = dot(radial, v);
   float angle = atan(y, x) + angleOffset;
-  float temp = 1.0 - (r - innerR) / max(outerR - innerR, 1e-5);
+  float span = max(outerR - innerR, 1e-5);
+  float temp = 1.0 - clamp((r - innerR) / span, 0.0, 1.0);
+  // Keep more of the radial width in the hot/colored zone on light
+  temp = mix(temp, pow(clamp(temp, 0.0, 1.0), 0.55), u_light);
   vec3 rl = normalize(radial);
   vec3 tg = normalize(cross(axis, rl));
   float dop = dot(tg, rd);
   col = tintDisk(diskThermal(temp, angle, -dop, time), hue);
+  if (u_light > 0.5) {
+    float vf = 1.0 - smoothstep(halfT * 0.25, halfT, hAbs);
+    float rf = 1.0;
+    if (r < innerR) rf = smoothstep(innerR - rPad * 0.35, innerR, r);
+    else if (r > outerR) rf = 1.0 - smoothstep(outerR, outerR + rPad, r);
+    float gate = max(vf * rf, 0.0);
+    col *= 0.65 + 0.35 * gate;
+    float l = dot(col, vec3(0.299, 0.587, 0.114));
+    col = mix(vec3(l), col, 1.7);
+    col = clamp(col * 1.25, 0.0, 1.0);
+  }
   return true;
 }
 
@@ -209,6 +247,10 @@ vec4 trace(
     if (d1 > 110.0 && d2 > 110.0) {
       vec3 far = skyFar(ro, rd, p1, r1, p2, r2, binary);
       acc += far;
+      if (u_light > 0.5) {
+        float a = clamp(max(max(acc.r, acc.g), acc.b) * 0.45, 0.0, 0.22);
+        return vec4(vec3(0.97, 0.985, 1.0) * a, a);
+      }
       float a = clamp(max(max(acc.r, acc.g), acc.b) * 1.05, 0.0, 0.55);
       return vec4(acc, a);
     }
@@ -233,6 +275,10 @@ vec4 trace(
 
   vec3 far = skyFar(ro, rd, p1, r1, p2, r2, binary);
   acc += far;
+  if (u_light > 0.5) {
+    float a = clamp(max(max(acc.r, acc.g), acc.b) * 0.4, 0.0, 0.2);
+    return vec4(vec3(0.97, 0.985, 1.0) * a, a);
+  }
   float a = clamp(max(max(acc.r, acc.g), acc.b) * 1.0, 0.0, 0.5);
   return vec4(acc, a);
 }
@@ -264,10 +310,10 @@ void main() {
   vec3 P1 = vec3(ca * (-sep * 0.5), 0.12 * sin(time * 0.55), sa * (-sep * 0.5));
   vec3 P2 = vec3(ca * ( sep * 0.5), -0.1 * sin(time * 0.61 + 0.7), sa * ( sep * 0.5));
 
-  float I1 = R1 * max(u_bh1.z, 1.35);
-  float O1 = R1 * max(u_bh1.w, I1 / R1 + 1.1);
-  float I2 = R2 * max(u_bh2.z, 1.35);
-  float O2 = R2 * max(u_bh2.w, I2 / R2 + 1.1);
+  float I1 = R1 * max(u_bh1.z, 1.35) * mix(1.0, 0.72, u_light);
+  float O1 = R1 * max(u_bh1.w, I1 / R1 + 1.1) * mix(1.0, 1.65, u_light);
+  float I2 = R2 * max(u_bh2.z, 1.35) * mix(1.0, 0.72, u_light);
+  float O2 = R2 * max(u_bh2.w, I2 / R2 + 1.1) * mix(1.0, 1.65, u_light);
   float S1 = clamp(u_bh1.y, -1.8, 1.8);
   float S2 = clamp(u_bh2.y, -1.8, 1.8);
 
@@ -313,19 +359,35 @@ void main() {
 
   vec4 farCol = vec4(0.0);
   float lod = smoothstep(farR, nearR, dNear);
-  if (lod < 0.97) {
+  if (lod < 0.97 && u_light < 0.5) {
     vec3 far = skyFar(ro, rd, P1, R1, P2, R2, u_binary);
     float fall = exp(-dNear * mix(0.55, 0.38, u_mobile));
     float aMax = mix(0.28, 0.42, u_mobile);
     float farA = clamp(max(max(far.r, far.g), far.b) * mix(0.85, 1.15, u_mobile), 0.0, aMax) * fall;
     farA *= 0.55 + 0.45 * u_sky;
     farCol = vec4(far * farA, farA);
+  } else if (lod < 0.97 && u_light > 0.5) {
+    // Soft luminous halo — warm/cool tint, not flat grey veil
+    float fall = exp(-dNear * mix(0.48, 0.32, u_mobile));
+    float glowA = 0.18 * fall * (0.35 + 0.65 * u_sky);
+    vec3 halo = mix(vec3(1.0, 0.72, 0.42), vec3(0.55, 0.75, 1.0), 0.45 + 0.25 * sin(u_time * 0.2));
+    farCol = vec4(halo * glowA, glowA);
   }
 
   vec3 col = hit.rgb * mix(0.95, 1.55, clamp(u_glow, 0.4, 2.0) / 2.0);
-  // Light theme: hotter disks / sharper cores against white
-  col *= mix(1.0, 1.22, u_light);
-  col = clamp(col / (col * mix(0.26, 0.18, u_light) + mix(0.74, 0.82, u_light)), 0.0, 1.0);
+  if (u_light > 0.5) {
+    // Punch saturated disk color through the white stage
+    col *= 1.75;
+    float l = dot(col, vec3(0.299, 0.587, 0.114));
+    float sat = length(col - vec3(l));
+    col = mix(vec3(l), col, 1.85);
+    col = clamp(col / (col * 0.06 + 0.94), 0.0, 1.0);
+    // Bleach only achromatic charcoal — never eat chroma into white
+    float dead = (1.0 - smoothstep(0.03, 0.18, l)) * (1.0 - smoothstep(0.02, 0.1, sat));
+    col = mix(col, vec3(1.0), dead);
+  } else {
+    col = clamp(col / (col * 0.26 + 0.74), 0.0, 1.0);
+  }
   float core = smoothstep(diskSpan * 2.0, diskSpan * 0.35, dNear);
   float nearA = hit.a * mix(mix(0.55, 0.7, u_mobile), 1.0, core);
   vec4 nearCol = vec4(col * nearA, nearA);
@@ -337,6 +399,20 @@ void main() {
   float edgeFade = 1.0 - smoothstep(0.94, 1.0, max(edgeUV.x, edgeUV.y));
   fragColor.rgb *= mix(edgeFade, 1.0, core * lod);
   fragColor.a *= mix(edgeFade, 1.0, core * lod);
+
+  // Light theme: drop only achromatic charcoal soft haze — keep vivid disk color
+  if (u_light > 0.5) {
+    float a = max(fragColor.a, 1e-5);
+    vec3 np = fragColor.rgb / a;
+    float npl = dot(np, vec3(0.299, 0.587, 0.114));
+    float sat = length(np - vec3(npl));
+    float soft = 1.0 - smoothstep(0.4, 0.92, a);
+    float mud = soft
+      * (1.0 - smoothstep(0.06, 0.28, npl))
+      * (1.0 - smoothstep(0.03, 0.12, sat));
+    a *= 1.0 - mud;
+    fragColor = vec4(np * a, a);
+  }
 }`;
 
 function compile(gl: WebGL2RenderingContext, type: number, src: string) {
