@@ -10,6 +10,9 @@ const BouncingStickers = dynamic(() => import("./BouncingStickers"), {
 const FloatingBlackHole = dynamic(() => import("./FloatingBlackHole"), {
   ssr: false,
 });
+const FloatingLiquidDrop = dynamic(() => import("./FloatingLiquidDrop"), {
+  ssr: false,
+});
 
 function isLowPower() {
   if (typeof navigator === "undefined") return false;
@@ -46,6 +49,7 @@ export default function DeferredEffects({ links }: { links: string[] }) {
   const [showStickers, setShowStickers] = useState(false);
   const [showCursor, setShowCursor] = useState(false);
   const [showBlackHole, setShowBlackHole] = useState(false);
+  const [showLiquidDrop, setShowLiquidDrop] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -61,6 +65,12 @@ export default function DeferredEffects({ links }: { links: string[] }) {
       whenIdle(() => {
         if (!cancelled) setShowBlackHole(true);
       }, low ? 1800 : 800)
+    );
+
+    cleanups.push(
+      whenIdle(() => {
+        if (!cancelled) setShowLiquidDrop(true);
+      }, low ? 2400 : 1200)
     );
 
     cleanups.push(
@@ -94,6 +104,7 @@ export default function DeferredEffects({ links }: { links: string[] }) {
     <>
       {showBlackHole ? <FloatingBlackHole /> : null}
       {showStickers ? <BouncingStickers links={links} /> : null}
+      {showLiquidDrop ? <FloatingLiquidDrop /> : null}
       {showCursor ? <CursorSmudge /> : null}
     </>
   );

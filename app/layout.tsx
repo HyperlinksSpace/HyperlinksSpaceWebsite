@@ -14,6 +14,7 @@ import StrategyOverlay from "./components/StrategyOverlay";
 import { LanguageProvider } from "./components/LanguageContext";
 import { ThemeProvider } from "./components/ThemeContext";
 import { BlackHoleProvider } from "./components/BlackHoleContext";
+import { LiquidDropProvider } from "./components/LiquidDropContext";
 import { getStickerLinks, SITE_LINKS } from "./siteLinks";
 import "./globals.css";
 
@@ -106,6 +107,7 @@ export default function RootLayout({
         <LanguageProvider>
           <ThemeProvider>
           <BlackHoleProvider>
+          <LiquidDropProvider>
           <ViewportFix />
           <DeferredEffects links={stickerLinks} />
           {/* Bouncing stickers + cursor effects (deferred) */}
@@ -188,6 +190,7 @@ export default function RootLayout({
           <LanguageSwitcher />
           {children}
           <Analytics />
+          </LiquidDropProvider>
           </BlackHoleProvider>
           </ThemeProvider>
         </LanguageProvider>

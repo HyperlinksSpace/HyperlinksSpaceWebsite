@@ -4,13 +4,15 @@ import { useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useBlackHole, type BlackHoleBody } from "./BlackHoleContext";
 import { useLanguage } from "./LanguageContext";
+import { useLiquidDrop } from "./LiquidDropContext";
 
 const COPY = {
   en: {
-    panelAria: "Black hole controls",
-    title: "Black hole",
+    panelAria: "Site settings",
+    title: "Settings",
     close: "Close",
     closeAria: "Close settings",
+    bhSection: "Black hole",
     modeAria: "Tuning mode",
     auto: "Auto",
     manual: "Manual",
@@ -31,14 +33,28 @@ const COPY = {
     diskInner: "Disk inner (rₛ)",
     diskOuter: "Disk outer (rₛ)",
     hue: "Hue",
+    glassSection: "Liquid glass",
+    glassVisible: "Drop visible",
+    glassSize: "Drop size",
+    glassSpeed: "Drop speed",
+    glassStrength: "Distortion",
+    glassDepth: "Depth",
+    glassCA: "Chromatic aberration",
+    glassBlur: "Blur",
+    glassBrightness: "Brightness",
+    lightningSection: "Lightning",
+    lightningOn: "Bolts",
+    boltWidth: "Bolt width",
+    boltIntensity: "Bolt intensity",
     reset: "Reset defaults",
-    toggleAria: "Black hole settings",
+    toggleAria: "Site settings",
   },
   ru: {
-    panelAria: "Настройки чёрной дыры",
-    title: "Чёрная дыра",
+    panelAria: "Настройки сайта",
+    title: "Настройки",
     close: "Закрыть",
     closeAria: "Закрыть настройки",
+    bhSection: "Чёрная дыра",
     modeAria: "Режим настройки",
     auto: "Авто",
     manual: "Вручную",
@@ -60,8 +76,21 @@ const COPY = {
     diskInner: "Внутр. диск (rₛ)",
     diskOuter: "Внеш. диск (rₛ)",
     hue: "Оттенок",
+    glassSection: "Жидкое стекло",
+    glassVisible: "Капля видна",
+    glassSize: "Размер капли",
+    glassSpeed: "Скорость капли",
+    glassStrength: "Искажение",
+    glassDepth: "Глубина",
+    glassCA: "Хроматическая аберрация",
+    glassBlur: "Размытие",
+    glassBrightness: "Яркость",
+    lightningSection: "Молнии",
+    lightningOn: "Разряды",
+    boltWidth: "Толщина молний",
+    boltIntensity: "Интенсивность",
     reset: "Сбросить",
-    toggleAria: "Настройки чёрной дыры",
+    toggleAria: "Настройки сайта",
   },
 } as const;
 
@@ -201,6 +230,11 @@ function BlackHoleIcon() {
 export default function SiteSettings() {
   const { settings, setSettings, resetSettings, panelOpen, setPanelOpen } =
     useBlackHole();
+  const {
+    settings: drop,
+    setSettings: setDrop,
+    resetSettings: resetDrop,
+  } = useLiquidDrop();
   const { language } = useLanguage();
   const t = COPY[language] ?? COPY.en;
   const manual = settings.mode === "manual";
@@ -230,131 +264,252 @@ export default function SiteSettings() {
         </button>
       </div>
 
-      <div className="bhModeRow" role="group" aria-label={t.modeAria}>
-        <button
-          type="button"
-          className={`bhModeBtn${settings.mode === "auto" ? " is-active" : ""}`}
-          aria-pressed={settings.mode === "auto"}
-          onClick={() => setSettings((s) => ({ ...s, mode: "auto" }))}
-        >
-          {t.auto}
-        </button>
-        <button
-          type="button"
-          className={`bhModeBtn${settings.mode === "manual" ? " is-active" : ""}`}
-          aria-pressed={settings.mode === "manual"}
-          onClick={() => setSettings((s) => ({ ...s, mode: "manual" }))}
-        >
-          {t.manual}
-        </button>
-      </div>
+      <fieldset className="bhFieldset">
+        <legend>{t.bhSection}</legend>
 
-      <div className="bhToggles">
-        <label className="bhCheck">
-          <input
-            type="checkbox"
-            checked={settings.enabled}
-            onChange={(e) =>
-              setSettings((s) => ({ ...s, enabled: e.target.checked }))
-            }
-          />
-          {t.visible}
-        </label>
-        <label className="bhCheck">
-          <input
-            type="checkbox"
-            checked={settings.binary}
-            onChange={(e) =>
-              setSettings((s) => ({ ...s, binary: e.target.checked }))
-            }
-          />
-          {t.binary}
-        </label>
-        <label className="bhCheck">
-          <input
-            type="checkbox"
-            checked={settings.play}
-            onChange={(e) =>
-              setSettings((s) => ({ ...s, play: e.target.checked }))
-            }
-          />
-          {t.play}
-        </label>
-      </div>
+        <div className="bhModeRow" role="group" aria-label={t.modeAria}>
+          <button
+            type="button"
+            className={`bhModeBtn${settings.mode === "auto" ? " is-active" : ""}`}
+            aria-pressed={settings.mode === "auto"}
+            onClick={() => setSettings((s) => ({ ...s, mode: "auto" }))}
+          >
+            {t.auto}
+          </button>
+          <button
+            type="button"
+            className={`bhModeBtn${settings.mode === "manual" ? " is-active" : ""}`}
+            aria-pressed={settings.mode === "manual"}
+            onClick={() => setSettings((s) => ({ ...s, mode: "manual" }))}
+          >
+            {t.manual}
+          </button>
+        </div>
 
-      {!manual ? <p className="bhAutoHint">{t.autoHint}</p> : null}
+        <div className="bhToggles">
+          <label className="bhCheck">
+            <input
+              type="checkbox"
+              checked={settings.enabled}
+              onChange={(e) =>
+                setSettings((s) => ({ ...s, enabled: e.target.checked }))
+              }
+            />
+            {t.visible}
+          </label>
+          <label className="bhCheck">
+            <input
+              type="checkbox"
+              checked={settings.binary}
+              onChange={(e) =>
+                setSettings((s) => ({ ...s, binary: e.target.checked }))
+              }
+            />
+            {t.binary}
+          </label>
+          <label className="bhCheck">
+            <input
+              type="checkbox"
+              checked={settings.play}
+              onChange={(e) =>
+                setSettings((s) => ({ ...s, play: e.target.checked }))
+              }
+            />
+            {t.play}
+          </label>
+        </div>
 
-      <SliderRow
-        label={t.coreSize}
-        value={settings.size}
-        min={160}
-        max={360}
-        step={4}
-        onChange={(size) => setSettings((s) => ({ ...s, size }))}
-      />
-      <SliderRow
-        label={t.separation}
-        value={settings.separation}
-        min={0.35}
-        max={1.15}
-        step={0.01}
-        disabled={!manual}
-        onChange={(separation) => setSettings((s) => ({ ...s, separation }))}
-      />
-      <SliderRow
-        label={t.perspective}
-        value={settings.perspective}
-        min={0.7}
-        max={2}
-        step={0.01}
-        disabled={!manual}
-        onChange={(perspective) => setSettings((s) => ({ ...s, perspective }))}
-      />
-      <SliderRow
-        label={t.glow}
-        value={settings.glow}
-        min={0.4}
-        max={2}
-        step={0.01}
-        disabled={!manual}
-        onChange={(glow) => setSettings((s) => ({ ...s, glow }))}
-      />
-      <SliderRow
-        label={t.sky}
-        value={settings.sky}
-        min={0}
-        max={1.4}
-        step={0.01}
-        disabled={!manual}
-        onChange={(sky) => setSettings((s) => ({ ...s, sky }))}
-      />
-      <SliderRow
-        label={t.speed}
-        value={settings.speed}
-        min={0.15}
-        max={2.2}
-        step={0.05}
-        onChange={(speed) => setSettings((s) => ({ ...s, speed }))}
-      />
+        {!manual ? <p className="bhAutoHint">{t.autoHint}</p> : null}
 
-      <BodyControls
-        title={t.hole1}
-        body={settings.bh1}
-        disabled={!manual}
-        t={t}
-        onChange={(bh1) => setSettings((s) => ({ ...s, bh1 }))}
-      />
-      {settings.binary ? (
+        <SliderRow
+          label={t.coreSize}
+          value={settings.size}
+          min={160}
+          max={360}
+          step={4}
+          onChange={(size) => setSettings((s) => ({ ...s, size }))}
+        />
+        <SliderRow
+          label={t.separation}
+          value={settings.separation}
+          min={0.35}
+          max={1.15}
+          step={0.01}
+          disabled={!manual}
+          onChange={(separation) => setSettings((s) => ({ ...s, separation }))}
+        />
+        <SliderRow
+          label={t.perspective}
+          value={settings.perspective}
+          min={0.7}
+          max={2}
+          step={0.01}
+          disabled={!manual}
+          onChange={(perspective) => setSettings((s) => ({ ...s, perspective }))}
+        />
+        <SliderRow
+          label={t.glow}
+          value={settings.glow}
+          min={0.4}
+          max={2}
+          step={0.01}
+          disabled={!manual}
+          onChange={(glow) => setSettings((s) => ({ ...s, glow }))}
+        />
+        <SliderRow
+          label={t.sky}
+          value={settings.sky}
+          min={0}
+          max={1.4}
+          step={0.01}
+          disabled={!manual}
+          onChange={(sky) => setSettings((s) => ({ ...s, sky }))}
+        />
+        <SliderRow
+          label={t.speed}
+          value={settings.speed}
+          min={0.15}
+          max={2.2}
+          step={0.05}
+          onChange={(speed) => setSettings((s) => ({ ...s, speed }))}
+        />
+
         <BodyControls
-          title={t.hole2}
-          body={settings.bh2}
+          title={t.hole1}
+          body={settings.bh1}
           disabled={!manual}
           t={t}
-          onChange={(bh2) => setSettings((s) => ({ ...s, bh2 }))}
+          onChange={(bh1) => setSettings((s) => ({ ...s, bh1 }))}
         />
-      ) : null}
+        {settings.binary ? (
+          <BodyControls
+            title={t.hole2}
+            body={settings.bh2}
+            disabled={!manual}
+            t={t}
+            onChange={(bh2) => setSettings((s) => ({ ...s, bh2 }))}
+          />
+        ) : null}
+      </fieldset>
 
-      <button type="button" className="bhReset" onClick={resetSettings}>
+      <fieldset className="bhFieldset">
+        <legend>{t.glassSection}</legend>
+        <div className="bhToggles">
+          <label className="bhCheck">
+            <input
+              type="checkbox"
+              checked={drop.enabled}
+              onChange={(e) =>
+                setDrop((s) => ({ ...s, enabled: e.target.checked }))
+              }
+            />
+            {t.glassVisible}
+          </label>
+        </div>
+        <SliderRow
+          label={t.glassSize}
+          value={drop.size}
+          min={56}
+          max={220}
+          step={2}
+          onChange={(size) => setDrop((s) => ({ ...s, size }))}
+        />
+        <SliderRow
+          label={t.glassSpeed}
+          value={drop.speed}
+          min={0.15}
+          max={2.5}
+          step={0.05}
+          onChange={(speed) => setDrop((s) => ({ ...s, speed }))}
+        />
+        <SliderRow
+          label={t.glassStrength}
+          value={drop.strength}
+          min={8}
+          max={140}
+          step={1}
+          onChange={(strength) => setDrop((s) => ({ ...s, strength }))}
+        />
+        <SliderRow
+          label={t.glassDepth}
+          value={drop.depth}
+          min={2}
+          max={24}
+          step={1}
+          onChange={(depth) => setDrop((s) => ({ ...s, depth }))}
+        />
+        <SliderRow
+          label={t.glassCA}
+          value={drop.chromaticAberration}
+          min={0}
+          max={12}
+          step={0.5}
+          onChange={(chromaticAberration) =>
+            setDrop((s) => ({ ...s, chromaticAberration }))
+          }
+        />
+        <SliderRow
+          label={t.glassBlur}
+          value={drop.blur}
+          min={0}
+          max={8}
+          step={0.1}
+          onChange={(blur) => setDrop((s) => ({ ...s, blur }))}
+        />
+        <SliderRow
+          label={t.glassBrightness}
+          value={drop.brightness}
+          min={0.5}
+          max={1.4}
+          step={0.01}
+          onChange={(brightness) => setDrop((s) => ({ ...s, brightness }))}
+        />
+      </fieldset>
+
+      <fieldset className="bhFieldset">
+        <legend>{t.lightningSection}</legend>
+        <div className="bhToggles">
+          <label className="bhCheck">
+            <input
+              type="checkbox"
+              checked={drop.lightning}
+              onChange={(e) =>
+                setDrop((s) => ({ ...s, lightning: e.target.checked }))
+              }
+            />
+            {t.lightningOn}
+          </label>
+        </div>
+        <SliderRow
+          label={t.boltWidth}
+          value={drop.boltWidth}
+          min={0.4}
+          max={3}
+          step={0.05}
+          disabled={!drop.lightning}
+          onChange={(boltWidth) => setDrop((s) => ({ ...s, boltWidth }))}
+        />
+        <SliderRow
+          label={t.boltIntensity}
+          value={drop.boltIntensity}
+          min={0}
+          max={2}
+          step={0.05}
+          disabled={!drop.lightning}
+          onChange={(boltIntensity) =>
+            setDrop((s) => ({ ...s, boltIntensity }))
+          }
+        />
+      </fieldset>
+
+      <button
+        type="button"
+        className="bhReset"
+        onClick={() => {
+          resetSettings();
+          resetDrop();
+        }}
+      >
         {t.reset}
       </button>
     </div>

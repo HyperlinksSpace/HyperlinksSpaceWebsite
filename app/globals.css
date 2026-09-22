@@ -657,6 +657,46 @@ html[data-theme="light"] .hyperlinksWaveSvg {
   pointer-events: none;
 }
 
+/* Floating liquid-glass drop — above stage/overlays; click-through */
+.liquidDropRoot {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 2147483647;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.liquidDropGlass {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.35),
+    inset 0 -10px 22px rgba(0, 0, 0, 0.18),
+    0 0 0 1px rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+html[data-theme="light"] .liquidDropGlass {
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.65),
+    inset 0 -10px 22px rgba(40, 60, 90, 0.08),
+    0 0 0 1px rgba(30, 50, 80, 0.12);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.liquidDropCanvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none;
+}
+
 .bouncing-sticker {
   position: absolute;
   top: 0;
