@@ -10,18 +10,12 @@ import {
   type ReactNode,
 } from "react";
 
-/** Normalized viewport center (0–1). Persisted until reset. */
-export type LiquidDropPosition = {
-  xRatio: number;
-  yRatio: number;
-};
-
 export type LiquidDropSettings = {
   /** Show the floating drop. */
   enabled: boolean;
   /** Drop diameter in px (glass circle). */
   size: number;
-  /** Bounce speed multiplier (ignored while parked after drag). */
+  /** Bounce speed multiplier. Drag tosses the drop; it keeps floating afterward. */
   speed: number;
   /** nxrix liquid-glass strength. */
   strength: number;
@@ -39,11 +33,9 @@ export type LiquidDropSettings = {
   boltWidth: number;
   /** Lightning brightness / presence. */
   boltIntensity: number;
-  /** User-dragged placement; null = free bounce. */
-  position: LiquidDropPosition | null;
 };
 
-const STORAGE_KEY = "hyperlinks-liquid-drop-v2";
+const STORAGE_KEY = "hyperlinks-liquid-drop-v3";
 
 export const DEFAULT_LIQUID_DROP: LiquidDropSettings = {
   enabled: true,
@@ -57,7 +49,6 @@ export const DEFAULT_LIQUID_DROP: LiquidDropSettings = {
   lightning: true,
   boltWidth: 2,
   boltIntensity: 1,
-  position: null,
 };
 
 interface LiquidDropContextType {
@@ -73,18 +64,6 @@ interface LiquidDropContextType {
 const LiquidDropContext = createContext<LiquidDropContextType | undefined>(
   undefined
 );
-
-function normalizePosition(raw: unknown): LiquidDropPosition | null {
-  if (!raw || typeof raw !== "object") return null;
-  const p = raw as Partial<LiquidDropPosition>;
-  const xRatio = Number(p.xRatio);
-  const yRatio = Number(p.yRatio);
-  if (!Number.isFinite(xRatio) || !Number.isFinite(yRatio)) return null;
-  return {
-    xRatio: Math.min(1, Math.max(0, xRatio)),
-    yRatio: Math.min(1, Math.max(0, yRatio)),
-  };
-}
 
 function normalize(raw: Partial<LiquidDropSettings> | null): LiquidDropSettings {
   const base = { ...DEFAULT_LIQUID_DROP, ...(raw ?? {}) };
@@ -112,7 +91,6 @@ function normalize(raw: Partial<LiquidDropSettings> | null): LiquidDropSettings 
       2,
       Math.max(0, Number(base.boltIntensity) || DEFAULT_LIQUID_DROP.boltIntensity)
     ),
-    position: normalizePosition(base.position),
   };
 }
 

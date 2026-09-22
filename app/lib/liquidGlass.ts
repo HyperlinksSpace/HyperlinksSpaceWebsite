@@ -20,6 +20,8 @@ export type LiquidGlassOptions = {
   chromaticAberration: number;
   blur: number;
   brightness: number;
+  saturate: number;
+  contrast: number;
   /** Border radius in px; null uses the element's CSS radius. */
   radius: number | null;
 };
@@ -30,6 +32,8 @@ const DEFAULTS: LiquidGlassOptions = {
   chromaticAberration: 3,
   blur: 1,
   brightness: 0.9,
+  saturate: 1,
+  contrast: 1,
   radius: null,
 };
 
@@ -201,18 +205,20 @@ export class LiquidGlass {
   }
 
   private surface() {
-    const { blur, brightness } = this.o;
+    const { blur, brightness, saturate, contrast } = this.o;
     if (this.o.radius != null) {
       this.el.style.borderRadius = `${this.radiusPx()}px`;
     }
     const f = [
       !NO_SVG_BACKDROP && `url(#${this.id})`,
       blur > 0 && `blur(${blur}px)`,
-      `brightness(${brightness})`,
+      brightness !== 1 && `brightness(${brightness})`,
+      saturate !== 1 && `saturate(${saturate})`,
+      contrast !== 1 && `contrast(${contrast})`,
     ]
       .filter(Boolean)
       .join(" ");
-    this.el.style.backdropFilter = f;
-    this.el.style.setProperty("-webkit-backdrop-filter", f);
+    this.el.style.backdropFilter = f || "none";
+    this.el.style.setProperty("-webkit-backdrop-filter", f || "none");
   }
 }

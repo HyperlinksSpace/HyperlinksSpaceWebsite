@@ -137,17 +137,18 @@ void main() {
   vec3 V = vec3(0.0, 0.0, 1.0);
   float ndv = clamp(dot(N, V), 0.0, 1.0);
 
-  float F0 = mix(0.052, 0.02, uIsLight);
-  float fresnel = F0 + (1.0 - F0) * pow(1.0 - ndv, 5.0);
+  float F0 = mix(0.052, 0.035, uIsLight);
+  float fresnel = F0 + (1.0 - F0) * pow(1.0 - ndv, mix(5.0, 5.8, uIsLight));
 
   vec2 refr = normalize(puGlass + vec2(1e-5));
-  float px = (1.0 - ndv) * mix(0.145, 0.125, uIsLight);
-  float rR = length(pw + refr * px * 0.11 + vec2(0.006 * (1.0 - ndv), 0.0));
+  float px = (1.0 - ndv) * mix(0.145, 0.22, uIsLight);
+  float rR = length(pw + refr * px * 0.11 + vec2(0.012 * (1.0 - ndv), 0.0));
   float rG = length(pw + refr * px * 0.11);
-  float rB = length(pw + refr * px * 0.11 - vec2(0.006 * (1.0 - ndv), 0.0));
+  float rB = length(pw + refr * px * 0.11 - vec2(0.012 * (1.0 - ndv), 0.0));
 
-  vec3 envIn = mix(vec3(0.148, 0.15, 0.155), vec3(0.992, 0.996, 1.0), uIsLight);
-  vec3 envOut = mix(vec3(0.24, 0.25, 0.29), vec3(0.948, 0.968, 0.992), uIsLight);
+  /* Light: clear daylight lens — cool mint core, soft sky rim (not opaque blue mud). */
+  vec3 envIn = mix(vec3(0.148, 0.15, 0.155), vec3(0.94, 0.99, 0.97), uIsLight);
+  vec3 envOut = mix(vec3(0.24, 0.25, 0.29), vec3(0.78, 0.92, 1.0), uIsLight);
   float sR = smoothstep(0.0, 0.5, rR);
   float sG = smoothstep(0.0, 0.5, rG);
   float sB = smoothstep(0.0, 0.5, rB);
@@ -158,29 +159,30 @@ void main() {
     mix(envIn.b, envOut.b, sB)
   );
   vec3 envFlat = mix(envIn, envOut, sUni);
-  vec3 env = mix(envChr, envFlat, uIsLight);
+  vec3 env = mix(envChr, envFlat, mix(0.0, 0.12, uIsLight));
 
-  vec3 frostC = mix(vec3(0.18, 0.19, 0.22), vec3(0.998, 0.999, 1.0), uIsLight);
-  float frostAmt = (1.0 - ndv) * mix(0.44, 0.018, uIsLight);
+  vec3 frostC = mix(vec3(0.18, 0.19, 0.22), vec3(0.98, 1.0, 0.99), uIsLight);
+  float frostAmt = (1.0 - ndv) * mix(0.44, 0.10, uIsLight);
   frostAmt *= mix(0.38, 1.0, studioHlGate);
   env = mix(env, frostC, frostAmt);
   float crown = pow(ndv, 2.2);
-  env += mix(vec3(0.02, 0.022, 0.028), vec3(0.004, 0.0045, 0.006), uIsLight) * crown * mix(0.12, 1.0, studioHlGate);
+  env += mix(vec3(0.02, 0.022, 0.028), vec3(0.08, 0.16, 0.12), uIsLight) * crown * mix(0.12, 0.7, studioHlGate);
 
   float caust = sin(pw.y * 14.0 + t * 0.55) * cos(pw.x * 12.0 - t * 0.42);
   vec3 caustCol =
-    vec3(0.48, 0.72, 1.0) * caust * mix(0.036, 0.0, uIsLight) * (1.0 - smoothstep(0.28, 0.52, rw));
+    mix(vec3(0.48, 0.72, 1.0), vec3(0.25, 0.95, 0.55), uIsLight)
+    * caust * mix(0.036, 0.055, uIsLight) * (1.0 - smoothstep(0.28, 0.52, rw));
   caustCol *= mix(0.15, 1.0, studioHlGate);
 
   vec3 Lk = normalize(vec3(-0.38, 0.62, 1.0));
   float ndl = max(dot(N, Lk), 0.0);
-  float specT = pow(ndl, mix(118.0, 220.0, uIsLight));
-  float specB = pow(ndl, 18.0) * mix(0.24, 0.07, uIsLight);
-  float specAmt = mix(0.52, 0.36, uIsLight);
-  vec3 refl = mix(vec3(0.84, 0.91, 1.0), vec3(1.0), uIsLight);
+  float specT = pow(ndl, mix(118.0, 160.0, uIsLight));
+  float specB = pow(ndl, 18.0) * mix(0.24, 0.12, uIsLight);
+  float specAmt = mix(0.52, 0.72, uIsLight);
+  vec3 refl = mix(vec3(0.84, 0.91, 1.0), vec3(1.0, 1.0, 1.0), uIsLight);
   vec3 body = env + caustCol;
-  float fresMix = mix(0.76, 0.54, uIsLight);
-  vec3 col = mix(body, refl, fresnel * fresMix * mix(0.40, 1.0, studioHlGate));
+  float fresMix = mix(0.76, 0.62, uIsLight);
+  vec3 col = mix(body, refl, fresnel * fresMix * mix(0.40, 0.85, studioHlGate));
   col += vec3((specT + specB) * specAmt) * mix(0.14, 1.0, studioHlGate);
 
   float rPu = length(puGlass);
@@ -188,41 +190,41 @@ void main() {
   float rimAz = dot(puN, normalize(vec2(-0.72, -0.69)));
 
   vec2 hlUv = v_uv - vec2(0.26, 0.19);
-  float hl = exp(-dot(hlUv, hlUv) * mix(11.5, 22.0, uIsLight)) * mix(0.11, 0.06, uIsLight) * studioHlGate;
-  col += vec3(hl);
+  float hl = exp(-dot(hlUv, hlUv) * mix(11.5, 14.0, uIsLight)) * mix(0.11, 0.22, uIsLight) * studioHlGate;
+  col += mix(vec3(1.0), vec3(1.0, 1.0, 0.98), uIsLight) * hl;
   vec2 glUv = v_uv - vec2(0.30, 0.24);
-  float glint = exp(-dot(glUv, glUv) * mix(38.0, 58.0, uIsLight)) * mix(0.09, 0.05, uIsLight) * studioHlGate;
-  col += vec3(glint);
-  float grazingSpec = pow(1.0 - ndv, mix(5.0, 12.0, uIsLight)) * (1.0 - uIsLight) * 0.26;
-  col += vec3(grazingSpec) * (0.55 + 0.45 * smoothstep(-0.15, 0.88, rimAz)) * mix(0.18, 1.0, studioHlGate);
+  float glint = exp(-dot(glUv, glUv) * mix(38.0, 52.0, uIsLight)) * mix(0.09, 0.18, uIsLight) * studioHlGate;
+  col += mix(vec3(1.0), vec3(0.95, 1.0, 0.98), uIsLight) * glint;
+  float grazingSpec = pow(1.0 - ndv, mix(5.0, 7.5, uIsLight)) * mix(0.26, 0.18, uIsLight);
+  col += mix(vec3(1.0), vec3(0.35, 0.85, 0.70), uIsLight) * grazingSpec * (0.55 + 0.45 * smoothstep(-0.15, 0.88, rimAz)) * mix(0.18, 1.0, studioHlGate);
 
   vec2 brLit = normalize(vec2(0.58, -0.46));
   float innerSh = smoothstep(0.12, 0.5, rw) * max(0.0, dot(puN, brLit));
-  col *= 1.0 - innerSh * mix(0.12, 0.018, uIsLight);
+  col *= 1.0 - innerSh * mix(0.12, 0.08, uIsLight);
 
   float dEdge = rEdge - r0;
   float bead = smoothstep(0.0, 0.014, dEdge) * (1.0 - smoothstep(0.014, 0.045, dEdge));
-  float beadAsym = mix(0.88, 1.0, uIsLight * smoothstep(-0.35, 0.92, rimAz));
-  col += vec3(1.0) * bead * beadAsym * mix(0.38, 0.14, uIsLight) * mix(0.1, 1.0, studioHlGate);
+  float beadAsym = mix(0.88, 1.0, smoothstep(-0.35, 0.92, rimAz));
+  col += mix(vec3(1.0), vec3(0.55, 1.0, 0.82), uIsLight) * bead * beadAsym * mix(0.38, 0.42, uIsLight) * mix(0.1, 1.0, studioHlGate);
 
   float rimDef = exp(-dEdge * 58.0) * smoothstep(0.006, 0.042, dEdge) * (1.0 - smoothstep(0.05, 0.11, dEdge));
-  col += vec3(1.0) * rimDef * uIsLight * (0.05 + 0.10 * smoothstep(-0.2, 0.95, rimAz)) * studioHlGate;
+  col += vec3(0.20, 0.75, 0.55) * rimDef * uIsLight * (0.18 + 0.22 * smoothstep(-0.2, 0.95, rimAz)) * studioHlGate;
   col += vec3(0.07, 0.085, 0.11) * rimDef * (1.0 - uIsLight) * mix(0.45, 1.0, studioHlGate);
 
   float dispEdge = (1.0 - smoothstep(0.0, 0.018, dEdge)) * fresnel;
-  float disp = dispEdge * mix(1.0, 0.05, uIsLight) * mix(0.35, 1.0, studioHlGate);
-  col.r += disp * 0.055;
-  col.b += disp * 0.04;
-  col.g -= disp * 0.025;
+  float disp = dispEdge * mix(1.0, 1.45, uIsLight) * mix(0.35, 1.0, studioHlGate);
+  col.r += disp * mix(0.055, 0.14, uIsLight);
+  col.b += disp * mix(0.04, 0.10, uIsLight);
+  col.g += disp * mix(-0.025, 0.06, uIsLight);
 
   float iris = smoothstep(rEdge - 0.16, rEdge - 0.02, r0) * smoothstep(0.2, 0.85, sin(theta * 0.5 + 0.8));
-  col += vec3(1.0, 0.85, 0.95) * iris * 0.045 * sin(t * 1.2 + theta * 2.5) * (1.0 - uIsLight);
+  col += mix(vec3(1.0, 0.85, 0.95), vec3(0.35, 0.95, 0.70), uIsLight) * iris * mix(0.045, 0.05, uIsLight) * sin(t * 1.2 + theta * 2.5);
 
-  float shd = smoothstep(-0.15, 0.35, puGlass.y) * (1.0 - ndv) * mix(0.075, 0.010, uIsLight);
+  float shd = smoothstep(-0.15, 0.35, puGlass.y) * (1.0 - ndv) * mix(0.075, 0.05, uIsLight);
   col *= (1.0 - shd);
 
   float ltShell = smoothstep(0.15, 0.41, r0) * (1.0 - smoothstep(0.44, 0.53, r0));
-  col *= 1.0 - ltShell * mix(0.32, 0.07, uIsLight);
+  col *= 1.0 - ltShell * mix(0.32, 0.08, uIsLight);
 
   vec3 glassCol = col;
 
@@ -235,7 +237,7 @@ void main() {
   float ltTime = t * 5.2 + uPhase * 9.0;
   float ltBreathe = mix(
     0.55 + 0.45 * sin(uTime * 6.2 + uPhase * 2.4),
-    0.82 + 0.18 * sin(uTime * 6.2 + uPhase * 2.4),
+    0.62 + 0.38 * sin(uTime * 6.2 + uPhase * 2.4),
     uIsLight
   );
   float R_DROP = 0.5;
@@ -250,7 +252,7 @@ void main() {
   vec2 pLt = puGlass - ltOrig;
   float rLt = length(pLt);
   float flickRaw = 0.42 + 0.58 * pow(0.5 + 0.5 * sin(ltTime * 22.0 + ltSeed * 73.0), 2.4);
-  float flick = mix(flickRaw, 0.86 + 0.14 * (flickRaw - 0.42) / 0.58, uIsLight);
+  float flick = mix(flickRaw, 0.55 + 0.45 * flickRaw, uIsLight);
   float lenBoost = 1.0 + 0.24 * clamp(viewScale - 1.0, 0.0, 0.55);
   float accSharp = 0.0;
   float accGlow = 0.0;
@@ -268,7 +270,7 @@ void main() {
   accSharp = clamp(accSharp, 0.0, 13.5);
   accGlow = clamp(accGlow, 0.0, 22.0);
   float pin = exp(-dot(pLt, pLt) * 3600.0) * (0.13 + mix(0.10, 0.045, uIsLight) * sin(ltTime * 33.0 + ltSeed * 50.0)) * (1.0 + 0.20 * ltSmallChip) * mix(0.22, 1.0, studioHlGate);
-  vec3 ltCol = mix(vec3(1.0, 1.0, 1.0), vec3(0.0, 0.0, 1.0), uIsLight);
+  vec3 ltCol = mix(vec3(1.0, 1.0, 1.0), vec3(0.05, 0.45, 0.95), uIsLight);
   float pierce = smoothstep(0.006, 0.040, rLt) * smoothstep(0.004, 0.032, r0) * boltSpill * piercePastLiquid;
   float outsideBoost = 1.0 + 0.75 * smoothstep(rEdge + 0.002, rEdge + 0.09, r0) + 0.35 * smoothstep(R_DROP - 0.1, R_DROP - 0.02, r0);
   float rayStretch = 1.0 + 0.88 * smoothstep(0.17, 0.48, r0) + 0.95 * smoothstep(R_DROP + 0.04, R_VIEW - 0.08, r0);
@@ -289,19 +291,19 @@ void main() {
     + accSharp * 0.14
   ) * flick * piercePastLiquid * rayStretch;
   float ltAlpha = (ltAlphaBolt + outsideRay * 0.93) * uLightning * uBoltIntensity;
-  float rimAtBoost = smoothstep(R_DROP - 0.14, R_DROP - 0.03, r0) * boltSpill * flick * mix(0.20, 0.20, uIsLight) * killBroad * (1.0 - uIsLight) * uLightning * uBoltIntensity;
+  float rimAtBoost = smoothstep(R_DROP - 0.14, R_DROP - 0.03, r0) * boltSpill * flick * mix(0.20, 0.32, uIsLight) * killBroad * uLightning * uBoltIntensity;
   float At = clamp(ltAlpha + rimAtBoost, 0.0, 0.84);
 
-  float fill = mix(0.5, 0.40, uIsLight);
-  fill += clamp((46.0 - uChipPx) / 46.0, 0.0, 1.0) * mix(0.085, 0.045, uIsLight);
-  float aFres = fresnel * mix(0.19, 0.23, uIsLight);
-  float aBody = (1.0 - ndv) * mix(0.058, 0.036, uIsLight);
-  /* Soft glass veil over real backdrop refraction — keep translucent. */
-  float Ag = clamp((fill + aFres + aBody) * edgeMask * uGlassAmount * 0.42, 0.0, mix(0.55, 0.42, uIsLight));
+  float fill = mix(0.5, 0.28, uIsLight);
+  fill += clamp((46.0 - uChipPx) / 46.0, 0.0, 1.0) * mix(0.085, 0.04, uIsLight);
+  float aFres = fresnel * mix(0.19, 0.32, uIsLight);
+  float aBody = (1.0 - ndv) * mix(0.058, 0.04, uIsLight);
+  /* Light: thin lens veil so nxrix backdrop refraction reads as liquid glass. */
+  float Ag = clamp((fill + aFres + aBody) * edgeMask * uGlassAmount * mix(0.42, 0.34, uIsLight), 0.0, mix(0.55, 0.36, uIsLight));
   ltRgb *= uBoltIntensity * uLightning;
   vec3 premulOut = ltRgb * At + glassCol * Ag * (1.0 - At);
   float alpha = At + Ag * (1.0 - At);
-  alpha = clamp(alpha, 0.0, mix(0.88, 0.78, uIsLight));
+  alpha = clamp(alpha, 0.0, mix(0.88, 0.72, uIsLight));
   col = premulOut / max(alpha, 0.00035);
   fragColor = vec4(col, alpha);
 }
@@ -365,7 +367,7 @@ function viewSize(chip: number) {
 }
 
 export default function FloatingLiquidDrop() {
-  const { settings, setSettings } = useLiquidDrop();
+  const { settings } = useLiquidDrop();
   const { resolved } = useTheme();
   const rootRef = useRef<HTMLDivElement>(null);
   const glassRef = useRef<HTMLDivElement>(null);
@@ -373,10 +375,8 @@ export default function FloatingLiquidDrop() {
   const handleRef = useRef<HTMLDivElement>(null);
   const settingsRef = useRef(settings);
   const themeRef = useRef(resolved);
-  const setSettingsRef = useRef(setSettings);
   settingsRef.current = settings;
   themeRef.current = resolved;
-  setSettingsRef.current = setSettings;
 
   useEffect(() => {
     const root = rootRef.current;
@@ -393,8 +393,7 @@ export default function FloatingLiquidDrop() {
     let viewW = window.innerWidth;
     let viewH = window.innerHeight;
     const drag = { active: false, ox: 0, oy: 0 };
-    /** Parked after user drag (or restored from settings.position). */
-    let parked = Boolean(settingsRef.current.position);
+    const toss: { t: number; x: number; y: number }[] = [];
 
     const state: DropState = {
       x: Math.random() * Math.max(0, viewW - 140),
@@ -419,39 +418,26 @@ export default function FloatingLiquidDrop() {
       state.y = Math.min(maxY, Math.max(0, state.y));
     };
 
-    const applyPositionRatios = (pos: { xRatio: number; yRatio: number }) => {
-      const chip = settingsRef.current.size;
-      const view = viewSize(chip);
-      const cx = pos.xRatio * viewW;
-      const cy = pos.yRatio * viewH;
-      state.x = cx - view * 0.5;
-      state.y = cy - view * 0.5;
-      clampToViewport(chip);
-      state.vx = 0;
-      state.vy = 0;
-      parked = true;
-      applyRootTransform();
-    };
-
-    let lastPosKey = settingsRef.current.position
-      ? `${settingsRef.current.position.xRatio}:${settingsRef.current.position.yRatio}`
-      : "";
-
-    const savePosition = () => {
-      const chip = settingsRef.current.size;
-      const view = viewSize(chip);
-      const cx = state.x + view * 0.5;
-      const cy = state.y + view * 0.5;
-      const next = {
-        xRatio: Math.min(1, Math.max(0, cx / Math.max(viewW, 1))),
-        yRatio: Math.min(1, Math.max(0, cy / Math.max(viewH, 1))),
-      };
-      parked = true;
-      state.vx = 0;
-      state.vy = 0;
-      lastPosKey = `${next.xRatio}:${next.yRatio}`;
-      setSettingsRef.current((s) => ({ ...s, position: next }));
-      return next;
+    const applyTossFromSamples = (speed: number) => {
+      const n = toss.length;
+      if (n >= 2) {
+        const a = toss[0]!;
+        const b = toss[n - 1]!;
+        const dt = Math.max(16, b.t - a.t);
+        const vx = ((b.x - a.x) / dt) * 1000;
+        const vy = ((b.y - a.y) / dt) * 1000;
+        const mag = Math.hypot(vx, vy);
+        const target = 52 * speed;
+        if (mag > 40) {
+          const scale = Math.min(target * 1.85, mag) / mag;
+          state.vx = vx * scale;
+          state.vy = vy * scale;
+          toss.length = 0;
+          return;
+        }
+      }
+      toss.length = 0;
+      Object.assign(state, randomVelocity(speed));
     };
 
     const dropCenter = () => {
@@ -480,35 +466,46 @@ export default function FloatingLiquidDrop() {
 
     const applyGlassOptions = (s: LiquidDropSettings) => {
       const radius = s.size / 2;
+      const light = themeRef.current === "light";
       glass.style.width = `${s.size}px`;
       glass.style.height = `${s.size}px`;
       glass.style.borderRadius = `${radius}px`;
+      root.classList.toggle("is-light", light);
       const view = viewSize(s.size);
       root.style.width = `${view}px`;
       root.style.height = `${view}px`;
       syncHandleSize(s.size);
+      /* Daylight lens: stronger warp + CA so refraction reads on white. */
+      const opts = light
+        ? {
+            strength: Math.min(140, Math.max(96, s.strength * 1.35)),
+            depth: Math.min(22, Math.max(14, s.depth + 5)),
+            chromaticAberration: Math.min(10, Math.max(5.5, s.chromaticAberration + 2.5)),
+            blur: Math.min(5, Math.max(2.4, s.blur + 1.2)),
+            brightness: Math.min(1.12, Math.max(0.98, s.brightness + 0.08)),
+            saturate: 1.45,
+            contrast: 1.12,
+            radius,
+          }
+        : {
+            strength: s.strength,
+            depth: s.depth,
+            chromaticAberration: s.chromaticAberration,
+            blur: s.blur,
+            brightness: s.brightness,
+            saturate: 1,
+            contrast: 1,
+            radius,
+          };
       if (!glassFx) {
-        glassFx = new LiquidGlass(glass, {
-          strength: s.strength,
-          depth: s.depth,
-          chromaticAberration: s.chromaticAberration,
-          blur: s.blur,
-          brightness: s.brightness,
-          radius,
-        });
+        glassFx = new LiquidGlass(glass, opts);
       } else {
-        glassFx.set({
-          strength: s.strength,
-          depth: s.depth,
-          chromaticAberration: s.chromaticAberration,
-          blur: s.blur,
-          brightness: s.brightness,
-          radius,
-        });
+        glassFx.set(opts);
       }
     };
 
     applyGlassOptions(settingsRef.current);
+    applyRootTransform();
 
     const gl = canvas.getContext("webgl2", {
       alpha: true,
@@ -568,34 +565,30 @@ export default function FloatingLiquidDrop() {
       viewW = window.innerWidth;
       viewH = window.innerHeight;
       const chip = settingsRef.current.size;
-      const saved = settingsRef.current.position;
-      if (saved && parked) {
-        applyPositionRatios(saved);
-      } else {
-        clampToViewport(chip);
-        applyRootTransform();
-      }
+      clampToViewport(chip);
+      applyRootTransform();
       applyGlassOptions(settingsRef.current);
       resizeCanvas(chip);
     };
     window.addEventListener("resize", onResize);
     resizeCanvas(settingsRef.current.size);
 
-    if (settingsRef.current.position) {
-      applyPositionRatios(settingsRef.current.position);
-    } else {
-      applyRootTransform();
-    }
-
     const tickPhysics = (dtMs: number, s: LiquidDropSettings) => {
-      if (parked || drag.active) return;
+      if (drag.active) return;
       const view = viewSize(s.size);
       const maxX = Math.max(0, viewW - view);
       const maxY = Math.max(0, viewH - view);
       const target = 52 * s.speed;
-      const cur = Math.hypot(state.vx, state.vy) || 1;
-      state.vx = (state.vx / cur) * target;
-      state.vy = (state.vy / cur) * target;
+      let cur = Math.hypot(state.vx, state.vy);
+      if (cur < 8) {
+        Object.assign(state, randomVelocity(s.speed));
+        cur = Math.hypot(state.vx, state.vy) || 1;
+      }
+      const blend = 0.18;
+      const scaledX = (state.vx / cur) * target;
+      const scaledY = (state.vy / cur) * target;
+      state.vx = state.vx * (1 - blend) + scaledX * blend;
+      state.vy = state.vy * (1 - blend) + scaledY * blend;
       const dt = dtMs / 1000;
       state.x += state.vx * dt;
       state.y += state.vy * dt;
@@ -617,6 +610,7 @@ export default function FloatingLiquidDrop() {
 
     let lastSize = settingsRef.current.size;
     let lastGlassKey = "";
+    let lastTheme = themeRef.current;
 
     const onMove = (e: PointerEvent) => {
       if (!drag.active) return;
@@ -625,6 +619,8 @@ export default function FloatingLiquidDrop() {
       state.y = e.clientY - drag.oy;
       clampToViewport(settingsRef.current.size);
       applyRootTransform();
+      toss.push({ t: performance.now(), x: e.clientX, y: e.clientY });
+      if (toss.length > 6) toss.shift();
     };
 
     const endDrag = (e: PointerEvent) => {
@@ -633,8 +629,8 @@ export default function FloatingLiquidDrop() {
       handle.classList.remove("is-dragging");
       document.documentElement.classList.remove("bh-dragging");
       clampToViewport(settingsRef.current.size);
+      applyTossFromSamples(settingsRef.current.speed);
       applyRootTransform();
-      savePosition();
       try {
         handle.releasePointerCapture(e.pointerId);
       } catch {
@@ -650,6 +646,8 @@ export default function FloatingLiquidDrop() {
       drag.active = true;
       drag.ox = e.clientX - state.x;
       drag.oy = e.clientY - state.y;
+      toss.length = 0;
+      toss.push({ t: performance.now(), x: e.clientX, y: e.clientY });
       handle.classList.add("is-dragging");
       document.documentElement.classList.add("bh-dragging");
       document.documentElement.classList.remove("bh-grab-hover");
@@ -722,19 +720,6 @@ export default function FloatingLiquidDrop() {
         return;
       }
 
-      const posKey = s.position
-        ? `${s.position.xRatio}:${s.position.yRatio}`
-        : "";
-      if (posKey !== lastPosKey) {
-        lastPosKey = posKey;
-        if (s.position) {
-          applyPositionRatios(s.position);
-        } else if (!drag.active) {
-          parked = false;
-          Object.assign(state, randomVelocity(s.speed));
-        }
-      }
-
       const dt = Math.min(MAX_FRAME_MS, now - lastTs);
       lastTs = now;
       acc += dt;
@@ -759,25 +744,28 @@ export default function FloatingLiquidDrop() {
         s.chromaticAberration,
         s.blur,
         s.brightness,
+        themeRef.current,
       ].join(":");
-      if (glassKey !== lastGlassKey) {
+      if (glassKey !== lastGlassKey || themeRef.current !== lastTheme) {
         lastGlassKey = glassKey;
+        lastTheme = themeRef.current;
         applyGlassOptions(s);
       }
 
       const chip = s.size;
       const view = viewSize(chip);
+      const light = themeRef.current === "light";
       gl.clear(gl.COLOR_BUFFER_BIT);
       gl.useProgram(prog);
       gl.bindBuffer(gl.ARRAY_BUFFER, buf);
       gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
       gl.uniform1f(uni.uTime, now * 0.001);
-      gl.uniform1f(uni.uIsLight, themeRef.current === "light" ? 1 : 0);
+      gl.uniform1f(uni.uIsLight, light ? 1 : 0);
       gl.uniform1f(uni.uChipPx, chip);
       gl.uniform1f(uni.uViewPx, view);
       gl.uniform1f(uni.uBoltWidthTune, s.boltWidth);
-      gl.uniform1f(uni.uBoltIntensity, s.boltIntensity);
-      gl.uniform1f(uni.uGlassAmount, 1);
+      gl.uniform1f(uni.uBoltIntensity, s.boltIntensity * (light ? 1.15 : 1));
+      gl.uniform1f(uni.uGlassAmount, light ? 0.85 : 1);
       gl.uniform1f(uni.uLightning, s.lightning ? 1 : 0);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
@@ -806,17 +794,16 @@ export default function FloatingLiquidDrop() {
   }, []);
 
   return (
-    <>
-      <div ref={rootRef} className="liquidDropRoot" aria-hidden="true">
-        <div ref={glassRef} className="liquidDropGlass" />
-        <canvas ref={canvasRef} className="liquidDropCanvas" />
-        <div
-          ref={handleRef}
-          className="liquidDropDragHandle"
-          aria-label="Drag liquid glass"
-          title="Drag"
-        />
-      </div>
-    </>
+    <div ref={rootRef} className="liquidDropRoot" aria-hidden="true">
+      <div ref={glassRef} className="liquidDropGlass" />
+      <canvas ref={canvasRef} className="liquidDropCanvas" />
+      <div
+        ref={handleRef}
+        className="liquidDropDragHandle"
+        aria-label="Drag liquid glass"
+        title="Drag"
+      />
+    </div>
   );
 }
+
