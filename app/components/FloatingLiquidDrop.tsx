@@ -162,11 +162,11 @@ void main() {
   vec3 env = mix(envChr, envFlat, mix(0.0, 0.12, uIsLight));
 
   vec3 frostC = mix(vec3(0.18, 0.19, 0.22), vec3(0.98, 1.0, 0.99), uIsLight);
-  float frostAmt = (1.0 - ndv) * mix(0.44, 0.10, uIsLight);
-  frostAmt *= mix(0.38, 1.0, studioHlGate);
+  float frostAmt = (1.0 - ndv) * mix(0.44, 0.06, uIsLight);
+  frostAmt *= mix(0.38, 0.55, studioHlGate);
   env = mix(env, frostC, frostAmt);
   float crown = pow(ndv, 2.2);
-  env += mix(vec3(0.02, 0.022, 0.028), vec3(0.08, 0.16, 0.12), uIsLight) * crown * mix(0.12, 0.7, studioHlGate);
+  env += mix(vec3(0.02, 0.022, 0.028), vec3(0.04, 0.08, 0.06), uIsLight) * crown * mix(0.12, 0.35, studioHlGate);
 
   float caust = sin(pw.y * 14.0 + t * 0.55) * cos(pw.x * 12.0 - t * 0.42);
   vec3 caustCol =
@@ -190,13 +190,13 @@ void main() {
   float rimAz = dot(puN, normalize(vec2(-0.72, -0.69)));
 
   vec2 hlUv = v_uv - vec2(0.26, 0.19);
-  float hl = exp(-dot(hlUv, hlUv) * mix(11.5, 14.0, uIsLight)) * mix(0.11, 0.22, uIsLight) * studioHlGate;
+  float hl = exp(-dot(hlUv, hlUv) * mix(11.5, 14.0, uIsLight)) * mix(0.11, 0.10, uIsLight) * studioHlGate;
   col += mix(vec3(1.0), vec3(1.0, 1.0, 0.98), uIsLight) * hl;
   vec2 glUv = v_uv - vec2(0.30, 0.24);
-  float glint = exp(-dot(glUv, glUv) * mix(38.0, 52.0, uIsLight)) * mix(0.09, 0.18, uIsLight) * studioHlGate;
+  float glint = exp(-dot(glUv, glUv) * mix(38.0, 52.0, uIsLight)) * mix(0.09, 0.08, uIsLight) * studioHlGate;
   col += mix(vec3(1.0), vec3(0.95, 1.0, 0.98), uIsLight) * glint;
-  float grazingSpec = pow(1.0 - ndv, mix(5.0, 7.5, uIsLight)) * mix(0.26, 0.18, uIsLight);
-  col += mix(vec3(1.0), vec3(0.35, 0.85, 0.70), uIsLight) * grazingSpec * (0.55 + 0.45 * smoothstep(-0.15, 0.88, rimAz)) * mix(0.18, 1.0, studioHlGate);
+  float grazingSpec = pow(1.0 - ndv, mix(5.0, 7.5, uIsLight)) * mix(0.26, 0.12, uIsLight);
+  col += mix(vec3(1.0), vec3(0.35, 0.85, 0.70), uIsLight) * grazingSpec * (0.55 + 0.45 * smoothstep(-0.15, 0.88, rimAz)) * mix(0.18, 0.55, studioHlGate);
 
   vec2 brLit = normalize(vec2(0.58, -0.46));
   float innerSh = smoothstep(0.12, 0.5, rw) * max(0.0, dot(puN, brLit));
@@ -294,16 +294,16 @@ void main() {
   float rimAtBoost = smoothstep(R_DROP - 0.14, R_DROP - 0.03, r0) * boltSpill * flick * mix(0.20, 0.32, uIsLight) * killBroad * uLightning * uBoltIntensity;
   float At = clamp(ltAlpha + rimAtBoost, 0.0, 0.84);
 
-  float fill = mix(0.5, 0.28, uIsLight);
-  fill += clamp((46.0 - uChipPx) / 46.0, 0.0, 1.0) * mix(0.085, 0.04, uIsLight);
-  float aFres = fresnel * mix(0.19, 0.32, uIsLight);
-  float aBody = (1.0 - ndv) * mix(0.058, 0.04, uIsLight);
-  /* Light: thin lens veil so nxrix backdrop refraction reads as liquid glass. */
-  float Ag = clamp((fill + aFres + aBody) * edgeMask * uGlassAmount * mix(0.42, 0.34, uIsLight), 0.0, mix(0.55, 0.36, uIsLight));
+  float fill = mix(0.5, 0.42, uIsLight);
+  fill += clamp((46.0 - uChipPx) / 46.0, 0.0, 1.0) * mix(0.085, 0.05, uIsLight);
+  float aFres = fresnel * mix(0.19, 0.18, uIsLight);
+  float aBody = (1.0 - ndv) * mix(0.058, 0.045, uIsLight);
+  /* Match dark transparency — thin lens so backdrop refraction shows through. */
+  float Ag = clamp((fill + aFres + aBody) * edgeMask * uGlassAmount * mix(0.42, 0.38, uIsLight), 0.0, mix(0.55, 0.48, uIsLight));
   ltRgb *= uBoltIntensity * uLightning;
   vec3 premulOut = ltRgb * At + glassCol * Ag * (1.0 - At);
   float alpha = At + Ag * (1.0 - At);
-  alpha = clamp(alpha, 0.0, mix(0.88, 0.72, uIsLight));
+  alpha = clamp(alpha, 0.0, mix(0.88, 0.78, uIsLight));
   col = premulOut / max(alpha, 0.00035);
   fragColor = vec4(col, alpha);
 }
@@ -481,10 +481,10 @@ export default function FloatingLiquidDrop() {
             strength: Math.min(140, Math.max(96, s.strength * 1.35)),
             depth: Math.min(22, Math.max(14, s.depth + 5)),
             chromaticAberration: Math.min(10, Math.max(5.5, s.chromaticAberration + 2.5)),
-            blur: Math.min(5, Math.max(2.4, s.blur + 1.2)),
-            brightness: Math.min(1.12, Math.max(0.98, s.brightness + 0.08)),
-            saturate: 1.45,
-            contrast: 1.12,
+            blur: Math.min(5, Math.max(2.2, s.blur + 1.0)),
+            brightness: Math.min(1.06, Math.max(0.94, s.brightness)),
+            saturate: 1.25,
+            contrast: 1.06,
             radius,
           }
         : {
@@ -765,7 +765,7 @@ export default function FloatingLiquidDrop() {
       gl.uniform1f(uni.uViewPx, view);
       gl.uniform1f(uni.uBoltWidthTune, s.boltWidth);
       gl.uniform1f(uni.uBoltIntensity, s.boltIntensity * (light ? 1.15 : 1));
-      gl.uniform1f(uni.uGlassAmount, light ? 0.85 : 1);
+      gl.uniform1f(uni.uGlassAmount, light ? 0.72 : 1);
       gl.uniform1f(uni.uLightning, s.lightning ? 1 : 0);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
