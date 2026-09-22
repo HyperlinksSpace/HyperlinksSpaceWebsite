@@ -35,6 +35,7 @@ const COPY = {
     hue: "Hue",
     glassSection: "Liquid glass",
     glassVisible: "Drop visible",
+    glassFree: "Resume free float",
     glassSize: "Drop size",
     glassSpeed: "Drop speed",
     glassStrength: "Distortion",
@@ -78,6 +79,7 @@ const COPY = {
     hue: "Оттенок",
     glassSection: "Жидкое стекло",
     glassVisible: "Капля видна",
+    glassFree: "Снова свободно",
     glassSize: "Размер капли",
     glassSpeed: "Скорость капли",
     glassStrength: "Искажение",
@@ -406,6 +408,15 @@ export default function SiteSettings() {
             {t.glassVisible}
           </label>
         </div>
+        {drop.position ? (
+          <button
+            type="button"
+            className="bhReset"
+            onClick={() => setDrop((s) => ({ ...s, position: null }))}
+          >
+            {t.glassFree}
+          </button>
+        ) : null}
         <SliderRow
           label={t.glassSize}
           value={drop.size}

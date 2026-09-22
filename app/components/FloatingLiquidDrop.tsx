@@ -360,22 +360,30 @@ function randomVelocity(speed: number) {
   return { vx: Math.cos(angle) * mag, vy: Math.sin(angle) * mag };
 }
 
+function viewSize(chip: number) {
+  return chip + RAY_MARGIN_PX * 2;
+}
+
 export default function FloatingLiquidDrop() {
-  const { settings } = useLiquidDrop();
+  const { settings, setSettings } = useLiquidDrop();
   const { resolved } = useTheme();
   const rootRef = useRef<HTMLDivElement>(null);
   const glassRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const handleRef = useRef<HTMLDivElement>(null);
   const settingsRef = useRef(settings);
   const themeRef = useRef(resolved);
+  const setSettingsRef = useRef(setSettings);
   settingsRef.current = settings;
   themeRef.current = resolved;
+  setSettingsRef.current = setSettings;
 
   useEffect(() => {
     const root = rootRef.current;
     const glass = glassRef.current;
     const canvas = canvasRef.current;
-    if (!root || !glass || !canvas) return;
+    const handle = handleRef.current;
+    if (!root || !glass || !canvas || !handle) return;
 
     let glassFx: LiquidGlass | null = null;
     let raf = 0;
@@ -384,6 +392,9 @@ export default function FloatingLiquidDrop() {
     let acc = 0;
     let viewW = window.innerWidth;
     let viewH = window.innerHeight;
+    const drag = { active: false, ox: 0, oy: 0 };
+    /** Parked after user drag (or restored from settings.position). */
+    let parked = Boolean(settingsRef.current.position);
 
     const state: DropState = {
       x: Math.random() * Math.max(0, viewW - 140),
@@ -391,14 +402,91 @@ export default function FloatingLiquidDrop() {
       ...randomVelocity(settingsRef.current.speed),
     };
 
+    const applyRootTransform = () => {
+      root.style.transform = `translate3d(${state.x}px, ${state.y}px, 0)`;
+    };
+
+    const syncHandleSize = (chip: number) => {
+      handle.style.width = `${chip}px`;
+      handle.style.height = `${chip}px`;
+    };
+
+    const clampToViewport = (chip: number) => {
+      const view = viewSize(chip);
+      const maxX = Math.max(0, viewW - view);
+      const maxY = Math.max(0, viewH - view);
+      state.x = Math.min(maxX, Math.max(0, state.x));
+      state.y = Math.min(maxY, Math.max(0, state.y));
+    };
+
+    const applyPositionRatios = (pos: { xRatio: number; yRatio: number }) => {
+      const chip = settingsRef.current.size;
+      const view = viewSize(chip);
+      const cx = pos.xRatio * viewW;
+      const cy = pos.yRatio * viewH;
+      state.x = cx - view * 0.5;
+      state.y = cy - view * 0.5;
+      clampToViewport(chip);
+      state.vx = 0;
+      state.vy = 0;
+      parked = true;
+      applyRootTransform();
+    };
+
+    let lastPosKey = settingsRef.current.position
+      ? `${settingsRef.current.position.xRatio}:${settingsRef.current.position.yRatio}`
+      : "";
+
+    const savePosition = () => {
+      const chip = settingsRef.current.size;
+      const view = viewSize(chip);
+      const cx = state.x + view * 0.5;
+      const cy = state.y + view * 0.5;
+      const next = {
+        xRatio: Math.min(1, Math.max(0, cx / Math.max(viewW, 1))),
+        yRatio: Math.min(1, Math.max(0, cy / Math.max(viewH, 1))),
+      };
+      parked = true;
+      state.vx = 0;
+      state.vy = 0;
+      lastPosKey = `${next.xRatio}:${next.yRatio}`;
+      setSettingsRef.current((s) => ({ ...s, position: next }));
+      return next;
+    };
+
+    const dropCenter = () => {
+      const view = viewSize(settingsRef.current.size);
+      return {
+        cx: state.x + view * 0.5,
+        cy: state.y + view * 0.5,
+      };
+    };
+
+    const isDropHotspot = (clientX: number, clientY: number) => {
+      if (!settingsRef.current.enabled) return false;
+      const { cx, cy } = dropCenter();
+      const r = settingsRef.current.size * 0.5;
+      return Math.hypot(clientX - cx, clientY - cy) <= r;
+    };
+
+    const isSiteChrome = (target: EventTarget | null) => {
+      if (!(target instanceof Element)) return false;
+      return Boolean(
+        target.closest(
+          ".bhSettingsWrapper, .themeSwitchWrapper, .langSwitchWrapper, .bhSettingsPanel, #bh-settings-panel, .bhDragHandle"
+        )
+      );
+    };
+
     const applyGlassOptions = (s: LiquidDropSettings) => {
       const radius = s.size / 2;
       glass.style.width = `${s.size}px`;
       glass.style.height = `${s.size}px`;
       glass.style.borderRadius = `${radius}px`;
-      const view = s.size + RAY_MARGIN_PX * 2;
+      const view = viewSize(s.size);
       root.style.width = `${view}px`;
       root.style.height = `${view}px`;
+      syncHandleSize(s.size);
       if (!glassFx) {
         glassFx = new LiquidGlass(glass, {
           strength: s.strength,
@@ -464,7 +552,7 @@ export default function FloatingLiquidDrop() {
     gl.clearColor(0, 0, 0, 0);
 
     const resizeCanvas = (chip: number) => {
-      const view = chip + RAY_MARGIN_PX * 2;
+      const view = viewSize(chip);
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       const px = Math.max(1, Math.round(view * dpr));
       if (canvas.width !== px || canvas.height !== px) {
@@ -480,17 +568,28 @@ export default function FloatingLiquidDrop() {
       viewW = window.innerWidth;
       viewH = window.innerHeight;
       const chip = settingsRef.current.size;
-      const view = chip + RAY_MARGIN_PX * 2;
-      state.x = Math.min(state.x, Math.max(0, viewW - view));
-      state.y = Math.min(state.y, Math.max(0, viewH - view));
+      const saved = settingsRef.current.position;
+      if (saved && parked) {
+        applyPositionRatios(saved);
+      } else {
+        clampToViewport(chip);
+        applyRootTransform();
+      }
       applyGlassOptions(settingsRef.current);
       resizeCanvas(chip);
     };
     window.addEventListener("resize", onResize);
     resizeCanvas(settingsRef.current.size);
 
+    if (settingsRef.current.position) {
+      applyPositionRatios(settingsRef.current.position);
+    } else {
+      applyRootTransform();
+    }
+
     const tickPhysics = (dtMs: number, s: LiquidDropSettings) => {
-      const view = s.size + RAY_MARGIN_PX * 2;
+      if (parked || drag.active) return;
+      const view = viewSize(s.size);
       const maxX = Math.max(0, viewW - view);
       const maxY = Math.max(0, viewH - view);
       const target = 52 * s.speed;
@@ -519,15 +618,121 @@ export default function FloatingLiquidDrop() {
     let lastSize = settingsRef.current.size;
     let lastGlassKey = "";
 
+    const onMove = (e: PointerEvent) => {
+      if (!drag.active) return;
+      e.preventDefault();
+      state.x = e.clientX - drag.ox;
+      state.y = e.clientY - drag.oy;
+      clampToViewport(settingsRef.current.size);
+      applyRootTransform();
+    };
+
+    const endDrag = (e: PointerEvent) => {
+      if (!drag.active) return;
+      drag.active = false;
+      handle.classList.remove("is-dragging");
+      document.documentElement.classList.remove("bh-dragging");
+      clampToViewport(settingsRef.current.size);
+      applyRootTransform();
+      savePosition();
+      try {
+        handle.releasePointerCapture(e.pointerId);
+      } catch {
+        /* ignore */
+      }
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", endDrag);
+      window.removeEventListener("pointercancel", endDrag);
+      updateHoverState(e.clientX, e.clientY, e.target);
+    };
+
+    const beginDrag = (e: PointerEvent) => {
+      drag.active = true;
+      drag.ox = e.clientX - state.x;
+      drag.oy = e.clientY - state.y;
+      handle.classList.add("is-dragging");
+      document.documentElement.classList.add("bh-dragging");
+      document.documentElement.classList.remove("bh-grab-hover");
+      handle.style.pointerEvents = "auto";
+      try {
+        handle.setPointerCapture(e.pointerId);
+      } catch {
+        /* ignore */
+      }
+      window.addEventListener("pointermove", onMove, { passive: false });
+      window.addEventListener("pointerup", endDrag);
+      window.addEventListener("pointercancel", endDrag);
+    };
+
+    const updateHoverState = (
+      clientX: number,
+      clientY: number,
+      target: EventTarget | null
+    ) => {
+      if (drag.active) return;
+      const hot = isDropHotspot(clientX, clientY) && !isSiteChrome(target);
+      handle.classList.toggle("is-hot", hot);
+      document.documentElement.classList.toggle("bh-grab-hover", hot);
+      handle.style.pointerEvents = hot ? "auto" : "none";
+    };
+
+    const onHoverMove = (e: PointerEvent) => {
+      if (drag.active) return;
+      updateHoverState(e.clientX, e.clientY, e.target);
+    };
+
+    const onDownCapture = (e: PointerEvent) => {
+      if (e.button !== 0 && e.pointerType === "mouse") return;
+      if (drag.active) return;
+      if (isSiteChrome(e.target)) return;
+      if (!isDropHotspot(e.clientX, e.clientY)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      beginDrag(e);
+    };
+
+    const onDown = (e: PointerEvent) => {
+      if (e.button !== 0 && e.pointerType === "mouse") return;
+      if (drag.active) return;
+      if (!isDropHotspot(e.clientX, e.clientY)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      beginDrag(e);
+    };
+
+    handle.style.pointerEvents = "none";
+    const reducedMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)"
+    ).matches;
+    if (!reducedMotion) {
+      window.addEventListener("pointermove", onHoverMove, { passive: true });
+      window.addEventListener("pointerdown", onDownCapture, true);
+      handle.addEventListener("pointerdown", onDown);
+    }
+
     const frame = (now: number) => {
       if (cancelled) return;
       const s = settingsRef.current;
       root.style.display = s.enabled ? "" : "none";
+      handle.style.display = s.enabled ? "" : "none";
       if (!s.enabled) {
         lastTs = now;
         acc = 0;
         raf = requestAnimationFrame(frame);
         return;
+      }
+
+      const posKey = s.position
+        ? `${s.position.xRatio}:${s.position.yRatio}`
+        : "";
+      if (posKey !== lastPosKey) {
+        lastPosKey = posKey;
+        if (s.position) {
+          applyPositionRatios(s.position);
+        } else if (!drag.active) {
+          parked = false;
+          Object.assign(state, randomVelocity(s.speed));
+        }
       }
 
       const dt = Math.min(MAX_FRAME_MS, now - lastTs);
@@ -538,12 +743,14 @@ export default function FloatingLiquidDrop() {
         acc -= PHYSICS_STEP_MS;
       }
 
-      root.style.transform = `translate3d(${state.x}px, ${state.y}px, 0)`;
+      if (!drag.active) applyRootTransform();
 
       if (s.size !== lastSize) {
         lastSize = s.size;
         applyGlassOptions(s);
         resizeCanvas(s.size);
+        clampToViewport(s.size);
+        applyRootTransform();
       }
 
       const glassKey = [
@@ -559,7 +766,7 @@ export default function FloatingLiquidDrop() {
       }
 
       const chip = s.size;
-      const view = chip + RAY_MARGIN_PX * 2;
+      const view = viewSize(chip);
       gl.clear(gl.COLOR_BUFFER_BIT);
       gl.useProgram(prog);
       gl.bindBuffer(gl.ARRAY_BUFFER, buf);
@@ -583,6 +790,15 @@ export default function FloatingLiquidDrop() {
       cancelled = true;
       cancelAnimationFrame(raf);
       window.removeEventListener("resize", onResize);
+      if (!reducedMotion) {
+        handle.removeEventListener("pointerdown", onDown);
+        window.removeEventListener("pointermove", onHoverMove);
+        window.removeEventListener("pointerdown", onDownCapture, true);
+      }
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", endDrag);
+      window.removeEventListener("pointercancel", endDrag);
+      document.documentElement.classList.remove("bh-grab-hover", "bh-dragging");
       glassFx?.destroy();
       gl.deleteProgram(prog);
       gl.deleteBuffer(buf);
@@ -590,13 +806,17 @@ export default function FloatingLiquidDrop() {
   }, []);
 
   return (
-    <div
-      ref={rootRef}
-      className="liquidDropRoot"
-      aria-hidden="true"
-    >
-      <div ref={glassRef} className="liquidDropGlass" />
-      <canvas ref={canvasRef} className="liquidDropCanvas" />
-    </div>
+    <>
+      <div ref={rootRef} className="liquidDropRoot" aria-hidden="true">
+        <div ref={glassRef} className="liquidDropGlass" />
+        <canvas ref={canvasRef} className="liquidDropCanvas" />
+        <div
+          ref={handleRef}
+          className="liquidDropDragHandle"
+          aria-label="Drag liquid glass"
+          title="Drag"
+        />
+      </div>
+    </>
   );
 }

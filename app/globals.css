@@ -697,6 +697,53 @@ html[data-theme="light"] .liquidDropGlass {
   pointer-events: none;
 }
 
+/* Drag hotspot — same grab/hot pattern as black hole cores */
+.liquidDropDragHandle {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+  pointer-events: none;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.liquidDropDragHandle.is-hot {
+  pointer-events: auto;
+}
+
+.liquidDropDragHandle.is-dragging {
+  cursor: grabbing;
+  pointer-events: auto;
+}
+
+.liquidDropDragHandle::after {
+  content: "";
+  position: absolute;
+  inset: 12%;
+  border-radius: 50%;
+  border: 1.5px solid color-mix(in srgb, var(--theme-switch-fg) 40%, transparent);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+}
+
+.liquidDropDragHandle.is-hot::after,
+.liquidDropDragHandle.is-dragging::after {
+  opacity: 0.55;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .liquidDropDragHandle {
+    display: none;
+  }
+}
+
 .bouncing-sticker {
   position: absolute;
   top: 0;
