@@ -484,28 +484,19 @@ export default function FloatingLiquidDrop() {
       root.style.width = `${view}px`;
       root.style.height = `${view}px`;
       syncHandleSize(s.size);
-      /* Daylight lens: stronger warp + CA so refraction reads on white. */
-      const opts = light
-        ? {
-            strength: Math.min(140, Math.max(100, s.strength * 1.4)),
-            depth: Math.min(22, Math.max(14, s.depth + 5)),
-            chromaticAberration: Math.min(10, Math.max(6, s.chromaticAberration + 3)),
-            blur: Math.min(4.5, Math.max(1.8, s.blur + 0.8)),
-            brightness: 0.88,
-            saturate: 1.2,
-            contrast: 1.08,
-            radius,
-          }
-        : {
-            strength: s.strength,
-            depth: s.depth,
-            chromaticAberration: s.chromaticAberration,
-            blur: s.blur,
-            brightness: s.brightness,
-            saturate: 1,
-            contrast: 1,
-            radius,
-          };
+      /* Light: same readable lens as dark — no extra warp/brighten that washes the stage. */
+      const opts = {
+        strength: s.strength,
+        depth: s.depth,
+        chromaticAberration: light
+          ? Math.min(s.chromaticAberration + 0.5, 5)
+          : s.chromaticAberration,
+        blur: s.blur,
+        brightness: light ? Math.min(s.brightness, 0.95) : s.brightness,
+        saturate: light ? 1.05 : 1,
+        contrast: 1,
+        radius,
+      };
       if (!glassFx) {
         glassFx = new LiquidGlass(glass, opts);
       } else {
