@@ -11,10 +11,8 @@ import { useTheme } from "./ThemeContext";
  * moon umbra, and atmosphere rim. Drag like the black hole.
  */
 
-const DAY_URL =
-  "https://cdn.jsdelivr.net/npm/three-globe/example/img/earth-blue-marble.jpg";
-const NIGHT_URL =
-  "https://cdn.jsdelivr.net/npm/three-globe/example/img/earth-night.jpg";
+const DAY_URL = "/earth/day.jpg";
+const NIGHT_URL = "/earth/night.jpg";
 
 const GLOW_PAD = 1.35; // canvas larger than globe for atmosphere / overshine
 
@@ -85,6 +83,9 @@ void main() {
 
   vec3 dayCol = texture2D(uDayTex, vUv).rgb;
   vec3 nightCol = texture2D(uNightTex, vUv).rgb;
+  /* Guard against unbound/black samples before textures bind. */
+  dayCol = max(dayCol, vec3(0.02, 0.05, 0.12));
+  nightCol = max(nightCol, vec3(0.01, 0.015, 0.04));
 
   float s = dot(n, sunDir);
   float dayF = smoothstep(-0.08, 0.03, s);
@@ -96,6 +97,8 @@ void main() {
   float nightBoost = mix(1.0 + light * (1.0 - dayF * 1.5), 0.35 + light * 0.15, uIsLight);
   nightCol *= nightBoost;
   vec3 col = dayCol * sunT * dayF * (1.0 - obsc) + nightCol * nf * mix(1.0, 0.55, uIsLight);
+  /* Soft fill so the limb never collapses to a black bulb. */
+  col += dayCol * 0.08 * (1.0 - obsc);
 
   float mx = max(max(dayCol.r, dayCol.g), dayCol.b);
   float blueness = (dayCol.b - max(dayCol.r, dayCol.g)) / max(mx, 1e-4);
@@ -157,9 +160,56 @@ void main() {
 }
 `;
 
+function makePlaceholderTex(kind: "day" | "night"): THREE.CanvasTexture {
+  const w = 512;
+  const h = 256;
+  const c = document.createElement("canvas");
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext("2d")!;
+  if (kind === "day") {
+    const g = ctx.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, "#7ec8ff");
+    g.addColorStop(0.35, "#2f6b3a");
+    g.addColorStop(0.55, "#1e4d8c");
+    g.addColorStop(0.75, "#3d8b4f");
+    g.addColorStop(1, "#9ad0ff");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = "rgba(40,120,60,0.55)";
+    for (let i = 0; i < 18; i++) {
+      ctx.beginPath();
+      ctx.ellipse(
+        (i * 97) % w,
+        40 + ((i * 53) % (h - 80)),
+        30 + (i % 5) * 12,
+        18 + (i % 4) * 8,
+        0,
+        0,
+        Math.PI * 2
+      );
+      ctx.fill();
+    }
+  } else {
+    ctx.fillStyle = "#02040a";
+    ctx.fillRect(0, 0, w, h);
+    for (let i = 0; i < 400; i++) {
+      const x = (i * 47) % w;
+      const y = (i * 91) % h;
+      ctx.fillStyle = `rgba(255,${200 + (i % 40)},${140 + (i % 30)},${0.15 + (i % 5) * 0.08})`;
+      ctx.fillRect(x, y, 1 + (i % 2), 1 + (i % 2));
+    }
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.needsUpdate = true;
+  return tex;
+}
+
 function loadTextures(): Promise<{ day: THREE.Texture; night: THREE.Texture }> {
   const loader = new THREE.TextureLoader();
-  loader.setCrossOrigin("anonymous");
   const load = (url: string) =>
     new Promise<THREE.Texture>((resolve, reject) => {
       loader.load(url, resolve, undefined, reject);
@@ -245,11 +295,15 @@ export default function FloatingEarth() {
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 500);
     camera.position.set(0, 0.15, 3.35);
+    camera.lookAt(0, 0, 0);
+
+    const placeholderDay = makePlaceholderTex("day");
+    const placeholderNight = makePlaceholderTex("night");
 
     const uniforms = {
-      uDayTex: { value: null as THREE.Texture | null },
-      uNightTex: { value: null as THREE.Texture | null },
-      uSunPos: { value: new THREE.Vector3(230, 0, 0) },
+      uDayTex: { value: placeholderDay as THREE.Texture },
+      uNightTex: { value: placeholderNight as THREE.Texture },
+      uSunPos: { value: new THREE.Vector3(230, 40, 120) },
       uMoonPos: { value: new THREE.Vector3(0, 0, 60) },
       uRealShadows: { value: true },
       uOvershine: { value: 1 },
@@ -261,6 +315,7 @@ export default function FloatingEarth() {
       uniforms,
       vertexShader: EARTH_VERT,
       fragmentShader: EARTH_FRAG,
+      lights: false,
     });
     const earth = new THREE.Mesh(
       new THREE.SphereGeometry(1, 96, 72),
@@ -493,11 +548,16 @@ export default function FloatingEarth() {
         const maxA = renderer.capabilities.getMaxAnisotropy();
         optimizeTex(day, maxA);
         optimizeTex(night, maxA);
+        const prevDay = uniforms.uDayTex.value;
+        const prevNight = uniforms.uNightTex.value;
         uniforms.uDayTex.value = day;
         uniforms.uNightTex.value = night;
+        if (prevDay && prevDay !== day) prevDay.dispose();
+        if (prevNight && prevNight !== night) prevNight.dispose();
+        earthMat.needsUpdate = true;
       })
-      .catch(() => {
-        /* textures optional */
+      .catch((err) => {
+        console.warn("[FloatingEarth] texture load failed, using placeholder", err);
       });
 
     const frame = (now: number) => {
