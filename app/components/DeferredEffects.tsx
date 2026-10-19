@@ -13,6 +13,9 @@ const FloatingBlackHole = dynamic(() => import("./FloatingBlackHole"), {
 const FloatingLiquidDrop = dynamic(() => import("./FloatingLiquidDrop"), {
   ssr: false,
 });
+const FloatingEarth = dynamic(() => import("./FloatingEarth"), {
+  ssr: false,
+});
 
 function isLowPower() {
   if (typeof navigator === "undefined") return false;
@@ -50,6 +53,7 @@ export default function DeferredEffects({ links }: { links: string[] }) {
   const [showCursor, setShowCursor] = useState(false);
   const [showBlackHole, setShowBlackHole] = useState(false);
   const [showLiquidDrop, setShowLiquidDrop] = useState(false);
+  const [showEarth, setShowEarth] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -65,6 +69,12 @@ export default function DeferredEffects({ links }: { links: string[] }) {
       whenIdle(() => {
         if (!cancelled) setShowBlackHole(true);
       }, low ? 1800 : 800)
+    );
+
+    cleanups.push(
+      whenIdle(() => {
+        if (!cancelled) setShowEarth(true);
+      }, low ? 2200 : 1000)
     );
 
     cleanups.push(
@@ -103,6 +113,7 @@ export default function DeferredEffects({ links }: { links: string[] }) {
   return (
     <>
       {showBlackHole ? <FloatingBlackHole /> : null}
+      {showEarth ? <FloatingEarth /> : null}
       {showStickers ? <BouncingStickers links={links} /> : null}
       {showLiquidDrop ? <FloatingLiquidDrop /> : null}
       {showCursor ? <CursorSmudge /> : null}

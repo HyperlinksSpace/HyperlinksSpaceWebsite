@@ -15,6 +15,7 @@ import { LanguageProvider } from "./components/LanguageContext";
 import { ThemeProvider } from "./components/ThemeContext";
 import { BlackHoleProvider } from "./components/BlackHoleContext";
 import { LiquidDropProvider } from "./components/LiquidDropContext";
+import { EarthProvider } from "./components/EarthContext";
 import { getStickerLinks, SITE_LINKS } from "./siteLinks";
 import "./globals.css";
 
@@ -108,6 +109,7 @@ export default function RootLayout({
           <ThemeProvider>
           <BlackHoleProvider>
           <LiquidDropProvider>
+          <EarthProvider>
           <ViewportFix />
           <DeferredEffects links={stickerLinks} />
           {/* Bouncing stickers + cursor effects (deferred) */}
@@ -190,6 +192,7 @@ export default function RootLayout({
           <LanguageSwitcher />
           {children}
           <Analytics />
+          </EarthProvider>
           </LiquidDropProvider>
           </BlackHoleProvider>
           </ThemeProvider>

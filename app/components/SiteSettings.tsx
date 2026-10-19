@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { useBlackHole, type BlackHoleBody } from "./BlackHoleContext";
 import { useLanguage } from "./LanguageContext";
 import { useLiquidDrop } from "./LiquidDropContext";
+import { useEarth } from "./EarthContext";
 
 const COPY = {
   en: {
@@ -46,6 +47,16 @@ const COPY = {
     lightningOn: "Bolts",
     boltWidth: "Bolt width",
     boltIntensity: "Bolt intensity",
+    earthSection: "Earth / eclipses",
+    earthVisible: "Earth visible",
+    earthPlay: "Play",
+    earthSize: "Size",
+    earthSpeed: "Orbit speed",
+    earthEclipse: "Eclipse intensity",
+    earthShadows: "Real shadows",
+    earthAtmosphere: "Atmosphere",
+    earthOvershine: "Overshine",
+    earthSpin: "Spin",
     reset: "Reset defaults",
     toggleAria: "Site settings",
   },
@@ -89,6 +100,16 @@ const COPY = {
     lightningOn: "Разряды",
     boltWidth: "Толщина молний",
     boltIntensity: "Интенсивность",
+    earthSection: "Земля / затмения",
+    earthVisible: "Земля видна",
+    earthPlay: "Воспроизведение",
+    earthSize: "Размер",
+    earthSpeed: "Скорость орбиты",
+    earthEclipse: "Интенсивность затмения",
+    earthShadows: "Реальные тени",
+    earthAtmosphere: "Атмосфера",
+    earthOvershine: "Пересвет",
+    earthSpin: "Вращение",
     reset: "Сбросить",
     toggleAria: "Настройки сайта",
   },
@@ -235,6 +256,11 @@ export default function SiteSettings() {
     setSettings: setDrop,
     resetSettings: resetDrop,
   } = useLiquidDrop();
+  const {
+    settings: earth,
+    setSettings: setEarth,
+    resetSettings: resetEarth,
+  } = useEarth();
   const { language } = useLanguage();
   const t = COPY[language] ?? COPY.en;
   const manual = settings.mode === "manual";
@@ -502,12 +528,97 @@ export default function SiteSettings() {
         />
       </fieldset>
 
+      <fieldset className="bhFieldset">
+        <legend>{t.earthSection}</legend>
+        <div className="bhToggles">
+          <label className="bhCheck">
+            <input
+              type="checkbox"
+              checked={earth.enabled}
+              onChange={(e) =>
+                setEarth((s) => ({ ...s, enabled: e.target.checked }))
+              }
+            />
+            {t.earthVisible}
+          </label>
+          <label className="bhCheck">
+            <input
+              type="checkbox"
+              checked={earth.play}
+              onChange={(e) =>
+                setEarth((s) => ({ ...s, play: e.target.checked }))
+              }
+            />
+            {t.earthPlay}
+          </label>
+          <label className="bhCheck">
+            <input
+              type="checkbox"
+              checked={earth.realShadows}
+              onChange={(e) =>
+                setEarth((s) => ({ ...s, realShadows: e.target.checked }))
+              }
+            />
+            {t.earthShadows}
+          </label>
+        </div>
+        <SliderRow
+          label={t.earthSize}
+          value={earth.size}
+          min={120}
+          max={420}
+          step={4}
+          onChange={(size) => setEarth((s) => ({ ...s, size }))}
+        />
+        <SliderRow
+          label={t.earthSpeed}
+          value={earth.speed}
+          min={0.1}
+          max={2.5}
+          step={0.05}
+          onChange={(speed) => setEarth((s) => ({ ...s, speed }))}
+        />
+        <SliderRow
+          label={t.earthEclipse}
+          value={earth.eclipse}
+          min={0}
+          max={1}
+          step={0.01}
+          onChange={(eclipse) => setEarth((s) => ({ ...s, eclipse }))}
+        />
+        <SliderRow
+          label={t.earthAtmosphere}
+          value={earth.atmosphere}
+          min={0}
+          max={2}
+          step={0.05}
+          onChange={(atmosphere) => setEarth((s) => ({ ...s, atmosphere }))}
+        />
+        <SliderRow
+          label={t.earthOvershine}
+          value={earth.overshine}
+          min={0.4}
+          max={2.5}
+          step={0.05}
+          onChange={(overshine) => setEarth((s) => ({ ...s, overshine }))}
+        />
+        <SliderRow
+          label={t.earthSpin}
+          value={earth.spin}
+          min={0}
+          max={2}
+          step={0.05}
+          onChange={(spin) => setEarth((s) => ({ ...s, spin }))}
+        />
+      </fieldset>
+
       <button
         type="button"
         className="bhReset"
         onClick={() => {
           resetSettings();
           resetDrop();
+          resetEarth();
         }}
       >
         {t.reset}
