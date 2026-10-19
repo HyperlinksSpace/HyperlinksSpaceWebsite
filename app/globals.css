@@ -984,7 +984,7 @@ html[data-theme="light"] .liquidDropGlass {
 }
 
 .floatingEarthRoot.is-light .floatingEarthCanvas {
-  filter: saturate(1.12) brightness(1.08) contrast(1.04);
+  filter: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

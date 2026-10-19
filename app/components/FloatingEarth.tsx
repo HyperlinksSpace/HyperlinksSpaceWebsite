@@ -66,51 +66,49 @@ uniform sampler2D uDayTex;
 uniform sampler2D uNightTex;
 uniform float uOvershine;
 uniform float uIsLight;
+uniform float uExposure;
 
 varying vec2 vUv;
 varying vec3 vPos;
 
 ${SHARED_GLSL}
 
-#define TAU_V vec3(0.055, 0.115, 0.245)
-
 void main() {
   vec3 n = normalize(vPos);
   vec3 sunDir = normalize(uSunPos - vPos);
   float ndl = max(dot(n, sunDir), 0.0);
   float obsc = moonObscuration(vPos);
-  ndl = mix(ndl, 0.04, obsc);
 
   vec3 dayCol = texture2D(uDayTex, vUv).rgb;
   vec3 nightCol = texture2D(uNightTex, vUv).rgb;
-  /* Guard against unbound/black samples before textures bind. */
-  dayCol = max(dayCol, vec3(0.02, 0.05, 0.12));
-  nightCol = max(nightCol, vec3(0.01, 0.015, 0.04));
+  dayCol = max(dayCol, vec3(0.05, 0.12, 0.28));
+  nightCol = max(nightCol, vec3(0.02, 0.03, 0.08));
 
   float s = dot(n, sunDir);
-  float dayF = smoothstep(-0.08, 0.03, s);
-  vec3 sunT = exp(-TAU_V * (1.0 / (ndl + 0.028)));
+  /* Wide terminator — keep most of the front lit and readable. */
+  float dayF = smoothstep(-0.35, 0.25, s);
+  float city = smoothstep(-0.05, 0.08, max(nightCol.r, nightCol.g) - nightCol.b);
+  nightCol *= mix(1.15 + city * 1.4, 0.7 + city * 0.35, uIsLight);
 
-  float light = smoothstep(-0.1, 0.001, max(nightCol.r, nightCol.g) - nightCol.b);
-  float nf = max(1.0 - dayF * sunT.z, 0.0);
-  /* Light theme: mute city lights; dark keeps night sparkle. */
-  float nightBoost = mix(1.0 + light * (1.0 - dayF * 1.5), 0.35 + light * 0.15, uIsLight);
-  nightCol *= nightBoost;
-  vec3 col = dayCol * sunT * dayF * (1.0 - obsc) + nightCol * nf * mix(1.0, 0.55, uIsLight);
-  /* Soft fill so the limb never collapses to a black bulb. */
-  col += dayCol * 0.08 * (1.0 - obsc);
+  vec3 litDay = dayCol * (0.45 + 0.75 * ndl);
+  vec3 litNight = nightCol * mix(0.85, 0.55, uIsLight);
+  vec3 col = mix(litNight, litDay, dayF);
+
+  /* Eclipse umbra dims but never kills the map. */
+  col *= mix(1.0, 0.22, obsc);
 
   float mx = max(max(dayCol.r, dayCol.g), dayCol.b);
   float blueness = (dayCol.b - max(dayCol.r, dayCol.g)) / max(mx, 1e-4);
-  float water = smoothstep(0.10, 0.30, blueness) * 0.6 + 0.05;
+  float water = smoothstep(0.10, 0.30, blueness) * 0.55 + 0.08;
   vec3 viewDir = normalize(cameraPosition - vPos);
   vec3 h = normalize(sunDir + viewDir);
-  float spec = pow(max(dot(n, h), 0.0), 90.0);
-  col += water * spec * vec3(1.0, 0.95, 0.85) * ndl * (1.0 - obsc);
+  float spec = pow(max(dot(n, h), 0.0), 48.0);
+  col += water * spec * vec3(1.0, 0.97, 0.9) * ndl * (1.0 - obsc);
 
-  /* Overshine: lift midtones / highlights on light theme. */
-  col *= mix(1.0, 1.0 + 0.55 * uOvershine, uIsLight);
-  col += mix(vec3(0.0), vec3(0.08, 0.10, 0.14) * uOvershine * dayF, uIsLight);
+  /* Ambient fill + theme exposure (overshine on light). */
+  col += dayCol * mix(0.18, 0.28, uIsLight);
+  float exposure = uExposure * mix(1.15, 1.0 + 0.65 * uOvershine, uIsLight);
+  col *= exposure;
 
   gl_FragColor = vec4(col, 1.0);
 }
@@ -151,10 +149,9 @@ void main() {
   vec3 rimDark = vec3(0.25, 0.55, 1.0);
   vec3 rimLight = vec3(0.55, 0.85, 1.15);
   vec3 rim = mix(rimDark, rimLight, uIsLight);
-  float a = fres * sunLit * (1.0 - obsc * 0.85) * uAtmosphere;
-  a *= mix(0.55, 0.95 + 0.55 * uOvershine, uIsLight);
-  /* Soft overshine bloom on the limb for light theme. */
-  a += mix(0.0, fres * 0.22 * uOvershine, uIsLight);
+  float a = fres * (0.35 + 0.65 * sunLit) * (1.0 - obsc * 0.7) * uAtmosphere;
+  a *= mix(0.85, 1.15 + 0.5 * uOvershine, uIsLight);
+  a += fres * mix(0.12, 0.28 * uOvershine, uIsLight);
 
   gl_FragColor = vec4(rim * a, a);
 }
@@ -231,30 +228,28 @@ function optimizeTex(tex: THREE.Texture, maxAnisotropy: number) {
   tex.needsUpdate = true;
 }
 
-/** Sun / moon positions in Earth radii — periodically near-aligned for eclipses. */
+/** Keep the Sun mostly in front of the camera so the globe stays readable. */
 function bodyPositions(
   t: number,
   speed: number,
   eclipse: number
 ): { sun: THREE.Vector3; moon: THREE.Vector3 } {
-  const sunAng = t * 0.11 * speed;
-  const sunDist = 230.0;
+  const wobble = t * 0.22 * speed;
   const sun = new THREE.Vector3(
-    Math.cos(sunAng) * sunDist,
-    Math.sin(sunAng * 0.15) * 18.0,
-    Math.sin(sunAng) * sunDist
+    Math.sin(wobble) * 90.0,
+    55.0 + Math.sin(wobble * 0.6) * 25.0,
+    210.0
   );
 
-  // Moon usually offset; periodically snap toward the Sun line for umbra.
-  const cycle = (Math.sin(t * 0.065 * speed) * 0.5 + 0.5) * eclipse;
-  const align = Math.pow(cycle, 1.35);
-  const moonBaseAng = sunAng + Math.PI * (0.72 - 0.72 * align);
-  const moonDist = THREE.MathUtils.lerp(62, 46, align);
-  const moon = new THREE.Vector3(
-    Math.cos(moonBaseAng) * moonDist,
-    Math.sin(moonBaseAng * 0.4 + t * 0.02) * THREE.MathUtils.lerp(8, 0.8, align),
-    Math.sin(moonBaseAng) * moonDist
-  );
+  const cycle = (Math.sin(t * 0.08 * speed) * 0.5 + 0.5) * eclipse;
+  const align = Math.pow(cycle, 1.4);
+  const moon = sun
+    .clone()
+    .normalize()
+    .multiplyScalar(THREE.MathUtils.lerp(70, 48, align));
+  // Offset sideways when not eclipsing so the disc isn't always umbra.
+  moon.x += THREE.MathUtils.lerp(28, 0.5, align);
+  moon.y += THREE.MathUtils.lerp(12, 0.2, align);
   return { sun, moon };
 }
 
@@ -303,11 +298,12 @@ export default function FloatingEarth() {
     const uniforms = {
       uDayTex: { value: placeholderDay as THREE.Texture },
       uNightTex: { value: placeholderNight as THREE.Texture },
-      uSunPos: { value: new THREE.Vector3(230, 40, 120) },
-      uMoonPos: { value: new THREE.Vector3(0, 0, 60) },
+      uSunPos: { value: new THREE.Vector3(40, 60, 210) },
+      uMoonPos: { value: new THREE.Vector3(70, 20, 50) },
       uRealShadows: { value: true },
       uOvershine: { value: 1 },
       uIsLight: { value: 0 },
+      uExposure: { value: 1.35 },
       uAtmosphere: { value: 1 },
     };
 
@@ -589,13 +585,13 @@ export default function FloatingEarth() {
       if (s.play) elapsed += dt * s.speed;
 
       const light = themeRef.current === "light" ? 1 : 0;
-      /* Light theme overshine: lift exposure for a bright daylight globe. */
       const overshine = light
-        ? Math.max(s.overshine, 1.35) * 1.15
-        : s.overshine * 0.55;
+        ? Math.max(s.overshine, 1.25) * 1.2
+        : Math.max(s.overshine, 0.9);
 
       uniforms.uIsLight.value = light;
       uniforms.uOvershine.value = overshine;
+      uniforms.uExposure.value = light ? 1.55 : 1.4;
       uniforms.uAtmosphere.value = s.atmosphere;
       uniforms.uRealShadows.value = s.realShadows;
 
@@ -604,9 +600,15 @@ export default function FloatingEarth() {
         const bodies = bodyPositions(elapsed, 1, s.eclipse);
         uniforms.uSunPos.value.copy(bodies.sun);
         uniforms.uMoonPos.value.copy(bodies.moon);
+      } else {
+        // Still keep a bright key light when paused.
+        uniforms.uSunPos.value.set(40, 60, 210);
       }
 
       wrap.classList.toggle("is-light", light === 1);
+      wrap.style.filter = light
+        ? "saturate(1.15) brightness(1.12) contrast(1.05)"
+        : "saturate(1.05) brightness(1.08)";
       renderer.render(scene, camera);
 
       raf = requestAnimationFrame(frame);
