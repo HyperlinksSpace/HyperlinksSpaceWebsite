@@ -19,7 +19,7 @@ export type EarthPosition = {
 export type EarthSettings = {
   enabled: boolean;
   play: boolean;
-  /** Canvas / globe diameter in px. */
+  /** Reference canvas width in px (4:3 like nxrix; ~720). */
   size: number;
   /** Orbit / eclipse animation speed. */
   speed: number;
@@ -36,12 +36,13 @@ export type EarthSettings = {
   position: EarthPosition | null;
 };
 
-const STORAGE_KEY = "hyperlinks-earth-v1";
+const STORAGE_KEY = "hyperlinks-earth-v3";
 
 export const DEFAULT_EARTH: EarthSettings = {
   enabled: true,
   play: true,
-  size: 220,
+  // Half of nxrix reference width (~720 → 360), same 4:3 proportions
+  size: 360,
   speed: 0.85,
   eclipse: 0.55,
   realShadows: true,
@@ -78,7 +79,7 @@ function normalize(raw: Partial<EarthSettings> | null): EarthSettings {
   return {
     enabled: Boolean(base.enabled),
     play: Boolean(base.play),
-    size: Math.min(420, Math.max(120, Number(base.size) || DEFAULT_EARTH.size)),
+    size: Math.min(960, Math.max(240, Number(base.size) || DEFAULT_EARTH.size)),
     speed: Math.min(2.5, Math.max(0.1, Number(base.speed) || DEFAULT_EARTH.speed)),
     eclipse: Math.min(1, Math.max(0, Number(base.eclipse) || 0)),
     realShadows: Boolean(base.realShadows),

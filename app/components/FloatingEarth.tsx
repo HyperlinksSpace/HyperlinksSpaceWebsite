@@ -6,15 +6,16 @@ import { useEarth, type EarthSettings } from "./EarthContext";
 import { useTheme } from "./ThemeContext";
 
 /**
- * Floating Earth inspired by nxrix eclipses
- * (https://nxrix.github.io/notebooks/eclipses) — day/night globe,
- * moon umbra, and atmosphere rim. Drag like the black hole.
+ * Floating Earth matching nxrix eclipses framing & look
+ * https://nxrix.github.io/notebooks/eclipses
+ * https://github.com/nxrix/nxrix.github.io
  */
 
 const DAY_URL = "/earth/day.jpg";
 const NIGHT_URL = "/earth/night.jpg";
 
-const GLOW_PAD = 1.35; // canvas larger than globe for atmosphere / overshine
+/** Reference canvas is 4:3 (Observable resize: h = w * 0.75). */
+const ASPECT = 4 / 3;
 
 const EARTH_VERT = /* glsl */ `
 varying vec2 vUv;
@@ -26,9 +27,18 @@ void main() {
 }
 `;
 
+const ATMO_VERT = /* glsl */ `
+varying vec3 vPos;
+void main() {
+  vPos = position;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+`;
+
+/** Exact obscuration + atmosphere from nxrix eclipses (clouds omitted). */
 const SHARED_GLSL = /* glsl */ `
-const float PI = 3.141592653589793;
-const float R_SUN = 109.0757;
+const float PI  = 3.141592653589793;
+const float R_SUN  = 109.0757;
 const float R_MOON = 0.27247;
 
 uniform vec3 uSunPos;
@@ -36,124 +46,200 @@ uniform vec3 uMoonPos;
 uniform bool uRealShadows;
 
 float moonObscuration0(vec3 p) {
-  vec3 toSun = uSunPos - p;
+  vec3 toSun  = uSunPos  - p;
   vec3 toMoon = uMoonPos - p;
   float ds = length(toSun);
   float dm = length(toMoon);
-  float alpha = asin(clamp(R_SUN / ds, 0.0, 1.0));
-  float beta = asin(clamp(R_MOON / dm, 0.0, 1.0));
+  float alpha = asin(clamp(R_SUN  / ds, 0.0, 1.0));
+  float beta  = asin(clamp(R_MOON / dm, 0.0, 1.0));
   float d = atan(length(cross(toSun, toMoon)), dot(toSun, toMoon));
   if (d >= alpha + beta) return 0.0;
   if (beta > alpha && d <= beta - alpha) return 1.0;
-  if (d < 1.0e-7) return clamp(beta * beta / (alpha * alpha), 0.0, 1.0);
-  float d2 = d * d, a2 = alpha * alpha, b2 = beta * beta;
-  float A = a2 * acos(clamp((d2 + a2 - b2) / (2.0 * d * alpha), -1.0, 1.0));
-  float B = b2 * acos(clamp((d2 + b2 - a2) / (2.0 * d * beta), -1.0, 1.0));
-  float C = sqrt(max(0.0, (-d + alpha + beta) * (d + alpha - beta) * (d - alpha + beta) * (d + alpha + beta)));
-  return clamp((A + B - 0.5 * C) / (PI * a2), 0.0, 1.0);
+  if (d < 1.0e-7) return clamp(beta*beta/(alpha*alpha), 0.0, 1.0);
+  float d2 = d*d, a2 = alpha*alpha, b2 = beta*beta;
+  float A = a2 * acos(clamp((d2 + a2 - b2) / (2.0*d*alpha), -1.0, 1.0));
+  float B = b2 * acos(clamp((d2 + b2 - a2) / (2.0*d*beta ), -1.0, 1.0));
+  float C = sqrt(max(0.0, (-d+alpha+beta)*(d+alpha-beta)*(d-alpha+beta)*(d+alpha+beta)));
+  return clamp((A + B - 0.5*C) / (PI*a2), 0.0, 1.0);
 }
 
 float moonObscuration(vec3 p) {
   float a = moonObscuration0(p);
   if (uRealShadows) return a;
-  if (a >= 1.0) return 1.0;
-  return floor(a * 6.0) / 6.0;
+  else if (a>=1.0) return 1.0;
+  else return floor(a*6.0)/6.0;
+}
+
+vec2 raySphere(vec3 ro, vec3 rd, float r) {
+  float b = dot(ro, rd);
+  float c = dot(ro, ro) - r*r;
+  float disc = b*b - c;
+  if (disc < 0.0) return vec2(-1.0);
+  float s = sqrt(disc);
+  return vec2(-b - s, -b + s);
+}
+
+#define R_EARTH  1.0
+#define R_ATMO   1.0157
+#define H_R      0.015
+#define H_M      0.004
+#define BETA_R   vec3(3.8, 13.5, 33.1)
+#define BETA_M   vec3(21.0)
+
+const float MIE_EX   = 1.1;
+const float MIE_G    = -0.78;
+
+float rayleighPhase(float cosT) {
+  return 3.0 / (16.0 * PI) * (1.0 + cosT * cosT);
+}
+
+float miePhase(float g, float c, float cc) {
+  float gg = g * g;
+  float a = (1.0 - gg) * (1.0 + cc);
+  float b = 1.0 + gg - 2.0 * g * c;
+  b *= sqrt(b);
+  b *= 2.0 + gg;
+  return (3.0 / (8.0 * PI)) * a / b;
+}
+
+float densityRay(vec3 p) { return exp(-max(length(p) - R_EARTH, 0.0) / H_R); }
+float densityMie(vec3 p) { return exp(-max(length(p) - R_EARTH, 0.0) / H_M); }
+
+vec3 sunTransmittance(vec3 p, out float earthOcc, out vec3 sunDir, out float moonObsc) {
+  vec3 toSun = uSunPos - p;
+  sunDir = normalize(toSun);
+  vec2 tESun = raySphere(p, sunDir, R_EARTH);
+  earthOcc = (tESun.x > 0.0) ? 0.0 : 1.0;
+  if (earthOcc < 0.5) return vec3(0.0);
+  moonObsc = moonObscuration(p);
+
+  vec2 tASun = raySphere(p, sunDir, R_ATMO);
+  float chord = max(tASun.y, 0.0);
+  vec3 pA = p + (chord * 0.25) * sunDir;
+  vec3 pB = p + (chord * 0.75) * sunDir;
+  float stepLen = chord * 0.5;
+  vec3 tau = (BETA_R * (densityRay(pA) + densityRay(pB))
+            + BETA_M * MIE_EX * (densityMie(pA) + densityMie(pB))) * stepLen;
+  return exp(-tau);
+}
+
+vec3 sky(vec3 ro, vec3 rd) {
+  vec2 tA = raySphere(ro, rd, R_ATMO);
+  if (tA.x < 0.0) return vec3(0.0);
+  float tStart = max(tA.x, 0.0);
+  float tEnd   = tA.y;
+  vec2 tE = raySphere(ro, rd, R_EARTH);
+  if (tE.x > 0.0) tEnd = min(tEnd, tE.x);
+  if (tStart >= tEnd) return vec3(0.0);
+
+  float tMid     = (tStart + tEnd) * 0.5;
+  float sliceLen = (tEnd - tStart) * 0.5;
+
+  vec3 pFront = ro + ((tStart + tMid) * 0.5) * rd;
+  vec3 pBack  = ro + ((tMid   + tEnd) * 0.5) * rd;
+
+  vec3 sigmaRF = BETA_R * densityRay(pFront) * sliceLen;
+  vec3 sigmaMF = BETA_M * densityMie(pFront) * sliceLen;
+  vec3 sigmaRB = BETA_R * densityRay(pBack)  * sliceLen;
+  vec3 sigmaMB = BETA_M * densityMie(pBack)  * sliceLen;
+  vec3 sigmaF  = sigmaRF + sigmaMF;
+  vec3 sigmaB  = sigmaRB + sigmaMB;
+
+  float earthOccF, moonObscF; vec3 sunDirF;
+  vec3 transSunF = sunTransmittance(pFront, earthOccF, sunDirF, moonObscF);
+  float sunVisF  = earthOccF * (1.0 - moonObscF);
+
+  float earthOccB, moonObscB; vec3 sunDirB;
+  vec3 transSunB = sunTransmittance(pBack, earthOccB, sunDirB, moonObscB);
+  float sunVisB  = earthOccB * (1.0 - moonObscB);
+
+  float cF = dot(sunDirF, -rd);
+  float cB = dot(sunDirB, -rd);
+  float phaseR_F = rayleighPhase(cF);
+  float phaseR_B = rayleighPhase(cB);
+  float phaseM_F = miePhase(MIE_G, cF, cF * cF);
+  float phaseM_B = miePhase(MIE_G, cB, cB * cB);
+
+  vec3 L_front =
+        sunVisF * transSunF
+      * (phaseR_F * (1.0 - exp(-sigmaRF))
+       + phaseM_F * (1.0 - exp(-sigmaMF)));
+
+  vec3 L_back =
+        sunVisB * transSunB * exp(-sigmaF)
+      * (phaseR_B * (1.0 - exp(-sigmaRB))
+       + phaseM_B * (1.0 - exp(-sigmaMB)));
+
+  return (L_front + L_back) * 10.0;
 }
 `;
 
+/** Exact earth fragment from nxrix, plus light-theme overshine. */
 const EARTH_FRAG = /* glsl */ `
 uniform sampler2D uDayTex;
 uniform sampler2D uNightTex;
 uniform float uOvershine;
 uniform float uIsLight;
-uniform float uExposure;
+uniform float uAtmosphere;
 
 varying vec2 vUv;
 varying vec3 vPos;
 
 ${SHARED_GLSL}
 
+#define TAU_V vec3(0.055, 0.115, 0.245)
+
 void main() {
   vec3 n = normalize(vPos);
   vec3 sunDir = normalize(uSunPos - vPos);
-  float ndl = max(dot(n, sunDir), 0.0);
+  float ndl  = max(dot(n, sunDir), 0.0);
   float obsc = moonObscuration(vPos);
-
-  vec3 dayCol = texture2D(uDayTex, vUv).rgb;
+  ndl = mix(ndl, 0.04, obsc);
+  vec3 dayCol   = texture2D(uDayTex,   vUv).rgb;
   vec3 nightCol = texture2D(uNightTex, vUv).rgb;
-  dayCol = max(dayCol, vec3(0.05, 0.12, 0.28));
-  nightCol = max(nightCol, vec3(0.02, 0.03, 0.08));
 
-  float s = dot(n, sunDir);
-  /* Wide terminator — keep most of the front lit and readable. */
-  float dayF = smoothstep(-0.35, 0.25, s);
-  float city = smoothstep(-0.05, 0.08, max(nightCol.r, nightCol.g) - nightCol.b);
-  nightCol *= mix(1.15 + city * 1.4, 0.7 + city * 0.35, uIsLight);
+  float s     = dot(n, sunDir);
+  float dayF  = smoothstep(-0.08, 0.03, s);
+  vec3  sunT  = exp(-TAU_V * (1.0 / (ndl + 0.028)));
 
-  vec3 litDay = dayCol * (0.45 + 0.75 * ndl);
-  vec3 litNight = nightCol * mix(0.85, 0.55, uIsLight);
-  vec3 col = mix(litNight, litDay, dayF);
-
-  /* Eclipse umbra dims but never kills the map. */
-  col *= mix(1.0, 0.22, obsc);
+  float light = smoothstep(-0.1, 0.001, max(nightCol.r, nightCol.g) - nightCol.b);
+  float nf = max(1.0 - dayF*sunT.z,0.0);
+  nightCol *= 1.0 + light * (1.0-dayF*1.5);
+  /* Light theme: slightly mute cities, lift day (overshine). */
+  nightCol *= mix(1.0, 0.65, uIsLight);
+  vec3 col = dayCol * sunT * dayF * (1.0 - obsc) + nightCol * nf;
 
   float mx = max(max(dayCol.r, dayCol.g), dayCol.b);
-  float blueness = (dayCol.b - max(dayCol.r, dayCol.g)) / max(mx, 1e-4);
-  float water = smoothstep(0.10, 0.30, blueness) * 0.55 + 0.08;
+  float blueness = (dayCol.b - max(dayCol.r, dayCol.g))/max(mx,1e-4);
+  float water = smoothstep(0.10, 0.30, blueness)*0.6+0.05;
   vec3 viewDir = normalize(cameraPosition - vPos);
-  vec3 h = normalize(sunDir + viewDir);
-  float spec = pow(max(dot(n, h), 0.0), 48.0);
-  col += water * spec * vec3(1.0, 0.97, 0.9) * ndl * (1.0 - obsc);
 
-  /* Ambient fill + theme exposure (overshine on light). */
-  col += dayCol * mix(0.18, 0.28, uIsLight);
-  float exposure = uExposure * mix(1.15, 1.0 + 0.65 * uOvershine, uIsLight);
-  col *= exposure;
+  vec3  h = normalize(sunDir + viewDir);
+  float spec = pow(max(dot(n, h), 0.0), 90.0);
+  col += water * spec * vec3(1.0, 0.95, 0.85) * ndl * (1.0 - obsc);
 
-  gl_FragColor = vec4(col, 1.0);
-}
-`;
+  col *= mix(1.0, 1.0 + 0.35 * uOvershine, uIsLight);
+  col += mix(vec3(0.0), dayCol * 0.06 * uOvershine * dayF, uIsLight);
 
-const ATMO_VERT = /* glsl */ `
-varying vec3 vNormal;
-varying vec3 vWorldPos;
-void main() {
-  vNormal = normalize(normalMatrix * normal);
-  vec4 wp = modelMatrix * vec4(position, 1.0);
-  vWorldPos = wp.xyz;
-  gl_Position = projectionMatrix * viewMatrix * wp;
+  gl_FragColor = vec4(col,1.0);
 }
 `;
 
 const ATMO_FRAG = /* glsl */ `
-uniform vec3 uSunPos;
-uniform vec3 uMoonPos;
-uniform bool uRealShadows;
 uniform float uAtmosphere;
 uniform float uOvershine;
 uniform float uIsLight;
 
-varying vec3 vNormal;
-varying vec3 vWorldPos;
+varying vec3 vPos;
 
 ${SHARED_GLSL}
 
 void main() {
-  vec3 n = normalize(vNormal);
-  vec3 viewDir = normalize(cameraPosition - vWorldPos);
-  float fres = pow(1.0 - max(dot(n, viewDir), 0.0), 2.4);
-  vec3 sunDir = normalize(uSunPos - vWorldPos);
-  float sunLit = smoothstep(-0.15, 0.45, dot(n, sunDir));
-  float obsc = moonObscuration(normalize(vWorldPos));
-
-  vec3 rimDark = vec3(0.25, 0.55, 1.0);
-  vec3 rimLight = vec3(0.55, 0.85, 1.15);
-  vec3 rim = mix(rimDark, rimLight, uIsLight);
-  float a = fres * (0.35 + 0.65 * sunLit) * (1.0 - obsc * 0.7) * uAtmosphere;
-  a *= mix(0.85, 1.15 + 0.5 * uOvershine, uIsLight);
-  a += fres * mix(0.12, 0.28 * uOvershine, uIsLight);
-
-  gl_FragColor = vec4(rim * a, a);
+  vec3 ro = cameraPosition;
+  vec3 rd = normalize(vPos - ro);
+  vec3 col = sky(ro, rd) * uAtmosphere;
+  col *= mix(1.0, 1.0 + 0.45 * uOvershine, uIsLight);
+  gl_FragColor = vec4(col, 1.0);
 }
 `;
 
@@ -167,34 +253,17 @@ function makePlaceholderTex(kind: "day" | "night"): THREE.CanvasTexture {
   if (kind === "day") {
     const g = ctx.createLinearGradient(0, 0, 0, h);
     g.addColorStop(0, "#7ec8ff");
-    g.addColorStop(0.35, "#2f6b3a");
-    g.addColorStop(0.55, "#1e4d8c");
-    g.addColorStop(0.75, "#3d8b4f");
+    g.addColorStop(0.4, "#1e4d8c");
+    g.addColorStop(0.7, "#2f6b3a");
     g.addColorStop(1, "#9ad0ff");
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, w, h);
-    ctx.fillStyle = "rgba(40,120,60,0.55)";
-    for (let i = 0; i < 18; i++) {
-      ctx.beginPath();
-      ctx.ellipse(
-        (i * 97) % w,
-        40 + ((i * 53) % (h - 80)),
-        30 + (i % 5) * 12,
-        18 + (i % 4) * 8,
-        0,
-        0,
-        Math.PI * 2
-      );
-      ctx.fill();
-    }
   } else {
     ctx.fillStyle = "#02040a";
     ctx.fillRect(0, 0, w, h);
-    for (let i = 0; i < 400; i++) {
-      const x = (i * 47) % w;
-      const y = (i * 91) % h;
-      ctx.fillStyle = `rgba(255,${200 + (i % 40)},${140 + (i % 30)},${0.15 + (i % 5) * 0.08})`;
-      ctx.fillRect(x, y, 1 + (i % 2), 1 + (i % 2));
+    for (let i = 0; i < 500; i++) {
+      ctx.fillStyle = `rgba(255,220,160,${0.2 + (i % 5) * 0.1})`;
+      ctx.fillRect((i * 47) % w, (i * 91) % h, 1, 1);
     }
   }
   const tex = new THREE.CanvasTexture(c);
@@ -228,29 +297,61 @@ function optimizeTex(tex: THREE.Texture, maxAnisotropy: number) {
   tex.needsUpdate = true;
 }
 
-/** Keep the Sun mostly in front of the camera so the globe stays readable. */
+function makeGlowTexture(size = 256) {
+  const c = document.createElement("canvas");
+  c.width = c.height = size;
+  const ctx = c.getContext("2d")!;
+  const g = ctx.createRadialGradient(
+    size / 2,
+    size / 2,
+    0,
+    size / 2,
+    size / 2,
+    size / 2
+  );
+  g.addColorStop(0.0, "rgba(255,252,240,1)");
+  g.addColorStop(0.25, "rgba(255,236,180,0.85)");
+  g.addColorStop(0.5, "rgba(255,190,90,0.30)");
+  g.addColorStop(0.75, "rgba(255,150,50,0.07)");
+  g.addColorStop(1.0, "rgba(255,130,30,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, size, size);
+  return new THREE.CanvasTexture(c);
+}
+
+/**
+ * Body scales match nxrix (Earth radius = 1, Sun ~23000, Moon ~60).
+ * Animate a slow orbit with periodic near-alignment for eclipses.
+ */
 function bodyPositions(
   t: number,
   speed: number,
   eclipse: number
 ): { sun: THREE.Vector3; moon: THREE.Vector3 } {
-  const wobble = t * 0.22 * speed;
+  const sunAng = t * 0.08 * speed;
+  const sunDist = 23000;
   const sun = new THREE.Vector3(
-    Math.sin(wobble) * 90.0,
-    55.0 + Math.sin(wobble * 0.6) * 25.0,
-    210.0
+    Math.cos(sunAng) * sunDist,
+    Math.sin(sunAng * 0.12) * 1800,
+    Math.sin(sunAng) * sunDist
   );
 
-  const cycle = (Math.sin(t * 0.08 * speed) * 0.5 + 0.5) * eclipse;
-  const align = Math.pow(cycle, 1.4);
-  const moon = sun
-    .clone()
-    .normalize()
-    .multiplyScalar(THREE.MathUtils.lerp(70, 48, align));
-  // Offset sideways when not eclipsing so the disc isn't always umbra.
-  moon.x += THREE.MathUtils.lerp(28, 0.5, align);
-  moon.y += THREE.MathUtils.lerp(12, 0.2, align);
+  const cycle = (Math.sin(t * 0.05 * speed) * 0.5 + 0.5) * eclipse;
+  const align = Math.pow(cycle, 1.5);
+  // Moon near the sun-line when aligning (solar eclipse umbra on Earth).
+  const moonDist = THREE.MathUtils.lerp(60, 48, align);
+  const moonDir = sun.clone().normalize();
+  const side = new THREE.Vector3(0, 1, 0).cross(moonDir).normalize();
+  const moon = moonDir
+    .multiplyScalar(moonDist)
+    .add(side.multiplyScalar(THREE.MathUtils.lerp(18, 0.4, align)));
   return { sun, moon };
+}
+
+function canvasSize(widthPx: number) {
+  const w = Math.round(widthPx);
+  const h = Math.round(w / ASPECT);
+  return { w, h };
 }
 
 export default function FloatingEarth() {
@@ -283,13 +384,16 @@ export default function FloatingEarth() {
       alpha: true,
       premultipliedAlpha: false,
       powerPreference: "high-performance",
+      preserveDrawingBuffer: false,
     });
     renderer.setClearColor(0x000000, 0);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
 
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 500);
-    camera.position.set(0, 0.15, 3.35);
+
+    // Match nxrix: PerspectiveCamera(45), spherical (3.2, 1.5, 2.0)
+    const camera = new THREE.PerspectiveCamera(45, ASPECT, 0.25, 24000);
+    camera.position.setFromSphericalCoords(3.2, 1.5, 2.0);
     camera.lookAt(0, 0, 0);
 
     const placeholderDay = makePlaceholderTex("day");
@@ -298,12 +402,11 @@ export default function FloatingEarth() {
     const uniforms = {
       uDayTex: { value: placeholderDay as THREE.Texture },
       uNightTex: { value: placeholderNight as THREE.Texture },
-      uSunPos: { value: new THREE.Vector3(40, 60, 210) },
-      uMoonPos: { value: new THREE.Vector3(70, 20, 50) },
+      uSunPos: { value: new THREE.Vector3(23000, 0, 0) },
+      uMoonPos: { value: new THREE.Vector3(0, 0, 60) },
       uRealShadows: { value: true },
       uOvershine: { value: 1 },
       uIsLight: { value: 0 },
-      uExposure: { value: 1.35 },
       uAtmosphere: { value: 1 },
     };
 
@@ -311,10 +414,10 @@ export default function FloatingEarth() {
       uniforms,
       vertexShader: EARTH_VERT,
       fragmentShader: EARTH_FRAG,
-      lights: false,
     });
+    // nxrix: SphereGeometry(1, 160, 120)
     const earth = new THREE.Mesh(
-      new THREE.SphereGeometry(1, 96, 72),
+      new THREE.SphereGeometry(1, 160, 120),
       earthMat
     );
     scene.add(earth);
@@ -333,36 +436,68 @@ export default function FloatingEarth() {
       transparent: true,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
-      side: THREE.FrontSide,
     });
+    // nxrix: SphereGeometry(1.02, 96, 64)
     const atmo = new THREE.Mesh(
-      new THREE.SphereGeometry(1.045, 64, 48),
+      new THREE.SphereGeometry(1.02, 96, 64),
       atmoMat
     );
     scene.add(atmo);
+
+    const sunGlowTex = makeGlowTexture();
+    const sunGlow = new THREE.Sprite(
+      new THREE.SpriteMaterial({
+        map: sunGlowTex,
+        color: 0xffe9b0,
+        blending: THREE.AdditiveBlending,
+        transparent: true,
+        depthWrite: false,
+        depthTest: true,
+      })
+    );
+    sunGlow.scale.setScalar(109 * 8);
+    sunGlow.position.set(23000, 0, 0);
+    scene.add(sunGlow);
+
+    const sunMesh = new THREE.Mesh(
+      new THREE.SphereGeometry(109, 48, 48),
+      new THREE.MeshBasicMaterial({ color: 0xfff2a8 })
+    );
+    sunMesh.position.set(23000, 0, 0);
+    scene.add(sunMesh);
+
+    const moonMesh = new THREE.Mesh(
+      new THREE.SphereGeometry(0.27, 32, 32),
+      new THREE.MeshBasicMaterial({ color: 0x888888 })
+    );
+    moonMesh.position.set(0, 0, 60);
+    scene.add(moonMesh);
 
     let t0 = performance.now();
     let elapsed = 0;
 
     const applySize = (s: EarthSettings) => {
-      const px = Math.round(s.size * GLOW_PAD);
+      // size = reference width (nxrix ~720 = 512 * 1.40625)
+      const { w, h } = canvasSize(s.size);
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       renderer.setPixelRatio(dpr);
-      renderer.setSize(px, px, false);
-      wrap.style.width = `${px}px`;
-      wrap.style.height = `${px}px`;
-      handle.style.width = `${s.size}px`;
-      handle.style.height = `${s.size}px`;
-      camera.aspect = 1;
+      renderer.setSize(w, h, false);
+      wrap.style.width = `${w}px`;
+      wrap.style.height = `${h}px`;
+      // Hotspot = globe footprint (~circle inscribed in 4:3)
+      const hot = Math.min(w, h) * 0.72;
+      handle.style.width = `${hot}px`;
+      handle.style.height = `${hot}px`;
+      camera.aspect = w / h;
+      // nxrix: zoom = a <= 1 ? a : 1
+      camera.zoom = camera.aspect <= 1 ? camera.aspect : 1;
       camera.updateProjectionMatrix();
     };
 
     const clampPos = (s: EarthSettings) => {
-      const px = s.size * GLOW_PAD;
-      const maxX = Math.max(0, window.innerWidth - px);
-      const maxY = Math.max(0, window.innerHeight - px);
-      pos.x = Math.min(maxX, Math.max(0, pos.x));
-      pos.y = Math.min(maxY, Math.max(0, pos.y));
+      const { w, h } = canvasSize(s.size);
+      pos.x = Math.min(Math.max(0, window.innerWidth - w), Math.max(0, pos.x));
+      pos.y = Math.min(Math.max(0, window.innerHeight - h), Math.max(0, pos.y));
     };
 
     const applyTransform = () => {
@@ -370,29 +505,31 @@ export default function FloatingEarth() {
     };
 
     const applyPositionRatios = (p: { xRatio: number; yRatio: number }) => {
-      const px = settingsRef.current.size * GLOW_PAD;
-      pos.x = p.xRatio * window.innerWidth - px * 0.5;
-      pos.y = p.yRatio * window.innerHeight - px * 0.5;
+      const { w, h } = canvasSize(settingsRef.current.size);
+      pos.x = p.xRatio * window.innerWidth - w * 0.5;
+      pos.y = p.yRatio * window.innerHeight - h * 0.5;
       clampPos(settingsRef.current);
       applyTransform();
       pos.ready = true;
     };
 
     const savePosition = () => {
-      const px = settingsRef.current.size * GLOW_PAD;
-      const cx = pos.x + px * 0.5;
-      const cy = pos.y + px * 0.5;
-      const next = {
-        xRatio: Math.min(1, Math.max(0, cx / Math.max(window.innerWidth, 1))),
-        yRatio: Math.min(1, Math.max(0, cy / Math.max(window.innerHeight, 1))),
-      };
-      setSettingsRef.current((s) => ({ ...s, position: next }));
+      const { w, h } = canvasSize(settingsRef.current.size);
+      const cx = pos.x + w * 0.5;
+      const cy = pos.y + h * 0.5;
+      setSettingsRef.current((s) => ({
+        ...s,
+        position: {
+          xRatio: Math.min(1, Math.max(0, cx / Math.max(window.innerWidth, 1))),
+          yRatio: Math.min(1, Math.max(0, cy / Math.max(window.innerHeight, 1))),
+        },
+      }));
     };
 
     const placeDefault = () => {
-      const px = settingsRef.current.size * GLOW_PAD;
-      pos.x = Math.max(0, window.innerWidth * 0.72 - px * 0.5);
-      pos.y = Math.max(0, window.innerHeight * 0.55 - px * 0.5);
+      const { w, h } = canvasSize(settingsRef.current.size);
+      pos.x = Math.max(0, window.innerWidth * 0.62 - w * 0.5);
+      pos.y = Math.max(0, window.innerHeight * 0.48 - h * 0.5);
       clampPos(settingsRef.current);
       applyTransform();
       pos.ready = true;
@@ -406,12 +543,12 @@ export default function FloatingEarth() {
     }
 
     const earthCenter = () => {
-      const px = settingsRef.current.size * GLOW_PAD;
-      const globe = settingsRef.current.size;
+      const { w, h } = canvasSize(settingsRef.current.size);
+      const hot = Math.min(w, h) * 0.72;
       return {
-        cx: pos.x + px * 0.5,
-        cy: pos.y + px * 0.5,
-        r: globe * 0.5,
+        cx: pos.x + w * 0.5,
+        cy: pos.y + h * 0.5,
+        r: hot * 0.5,
       };
     };
 
@@ -550,10 +687,9 @@ export default function FloatingEarth() {
         uniforms.uNightTex.value = night;
         if (prevDay && prevDay !== day) prevDay.dispose();
         if (prevNight && prevNight !== night) prevNight.dispose();
-        earthMat.needsUpdate = true;
       })
       .catch((err) => {
-        console.warn("[FloatingEarth] texture load failed, using placeholder", err);
+        console.warn("[FloatingEarth] texture load failed", err);
       });
 
     const frame = (now: number) => {
@@ -585,32 +721,26 @@ export default function FloatingEarth() {
       if (s.play) elapsed += dt * s.speed;
 
       const light = themeRef.current === "light" ? 1 : 0;
-      const overshine = light
-        ? Math.max(s.overshine, 1.25) * 1.2
-        : Math.max(s.overshine, 0.9);
-
       uniforms.uIsLight.value = light;
-      uniforms.uOvershine.value = overshine;
-      uniforms.uExposure.value = light ? 1.55 : 1.4;
+      uniforms.uOvershine.value = light
+        ? Math.max(s.overshine, 1.2)
+        : s.overshine;
       uniforms.uAtmosphere.value = s.atmosphere;
       uniforms.uRealShadows.value = s.realShadows;
 
       if (s.play) {
-        earth.rotation.y += dt * s.spin * 0.35;
+        earth.rotation.y += dt * s.spin * 0.25;
         const bodies = bodyPositions(elapsed, 1, s.eclipse);
         uniforms.uSunPos.value.copy(bodies.sun);
         uniforms.uMoonPos.value.copy(bodies.moon);
-      } else {
-        // Still keep a bright key light when paused.
-        uniforms.uSunPos.value.set(40, 60, 210);
+        sunMesh.position.copy(bodies.sun);
+        sunGlow.position.copy(bodies.sun);
+        moonMesh.position.copy(bodies.moon);
       }
 
       wrap.classList.toggle("is-light", light === 1);
-      wrap.style.filter = light
-        ? "saturate(1.15) brightness(1.12) contrast(1.05)"
-        : "saturate(1.05) brightness(1.08)";
+      wrap.style.filter = light ? "brightness(1.06) saturate(1.08)" : "none";
       renderer.render(scene, camera);
-
       raf = requestAnimationFrame(frame);
     };
 
@@ -631,8 +761,14 @@ export default function FloatingEarth() {
       document.documentElement.classList.remove("bh-grab-hover", "bh-dragging");
       uniforms.uDayTex.value?.dispose();
       uniforms.uNightTex.value?.dispose();
+      sunGlowTex.dispose();
       earth.geometry.dispose();
       atmo.geometry.dispose();
+      sunMesh.geometry.dispose();
+      moonMesh.geometry.dispose();
+      (sunMesh.material as THREE.Material).dispose();
+      (moonMesh.material as THREE.Material).dispose();
+      (sunGlow.material as THREE.Material).dispose();
       earthMat.dispose();
       atmoMat.dispose();
       renderer.dispose();

@@ -565,9 +565,9 @@ export default function SiteSettings() {
         <SliderRow
           label={t.earthSize}
           value={earth.size}
-          min={120}
-          max={420}
-          step={4}
+          min={240}
+          max={960}
+          step={8}
           onChange={(size) => setEarth((s) => ({ ...s, size }))}
         />
         <SliderRow
