@@ -562,7 +562,7 @@ export default function FloatingEarth() {
       if (!(target instanceof Element)) return false;
       return Boolean(
         target.closest(
-          ".bhSettingsWrapper, .themeSwitchWrapper, .langSwitchWrapper, .bhSettingsPanel, #bh-settings-panel, .bhDragHandle, .liquidDropDragHandle"
+          ".bhSettingsWrapper, .themeSwitchWrapper, .socialLinksWrapper, .langSwitchWrapper, .bhSettingsPanel, #bh-settings-panel, .bhDragHandle, .liquidDropDragHandle"
         )
       );
     };

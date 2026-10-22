@@ -904,7 +904,7 @@ export default function FloatingBlackHole() {
       if (!(target instanceof Element)) return false;
       return Boolean(
         target.closest(
-          ".bhSettingsWrapper, .themeSwitchWrapper, .langSwitchWrapper, .bhSettingsPanel, #bh-settings-panel"
+          ".bhSettingsWrapper, .themeSwitchWrapper, .socialLinksWrapper, .langSwitchWrapper, .bhSettingsPanel, #bh-settings-panel"
         )
       );
     };

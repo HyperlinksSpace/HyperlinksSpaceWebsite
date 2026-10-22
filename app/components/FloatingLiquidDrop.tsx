@@ -468,7 +468,7 @@ export default function FloatingLiquidDrop() {
       if (!(target instanceof Element)) return false;
       return Boolean(
         target.closest(
-          ".bhSettingsWrapper, .themeSwitchWrapper, .langSwitchWrapper, .bhSettingsPanel, #bh-settings-panel, .bhDragHandle"
+          ".bhSettingsWrapper, .themeSwitchWrapper, .socialLinksWrapper, .langSwitchWrapper, .bhSettingsPanel, #bh-settings-panel, .bhDragHandle"
         )
       );
     };

@@ -16,6 +16,8 @@
   --site-left-controls-top: max(16px, env(safe-area-inset-top, 0px));
   --site-bh-control-size: 50px;
   --site-controls-gap: 8px;
+  /* Theme switcher pill width (2×36 + padding/gap) for left-control stacking */
+  --site-theme-switch-width: 86px;
 }
 
 :root,
@@ -889,6 +891,46 @@ html[data-theme="light"] .liquidDropGlass {
   display: block;
 }
 
+/* GitHub + Telegram — separate circles, top-right (same undercover as settings) */
+.socialLinksWrapper {
+  position: fixed;
+  right: 20px;
+  left: auto;
+  top: var(--site-left-controls-top);
+  bottom: auto;
+  z-index: 2147483647;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: var(--site-controls-gap);
+  height: var(--site-bh-control-size);
+}
+
+.socialLinkCircle {
+  pointer-events: auto;
+  display: grid;
+  place-items: center;
+  width: var(--site-bh-control-size);
+  height: var(--site-bh-control-size);
+  border-radius: 999px;
+  text-decoration: none;
+  color: var(--theme-switch-fg);
+  background: var(--theme-switch-bg);
+  border: 1px solid var(--theme-switch-border);
+  box-shadow: var(--theme-switch-shadow);
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease,
+    transform 0.2s ease,
+    box-shadow 0.35s ease,
+    border-color 0.35s ease;
+}
+
+.socialLinkCircle:hover {
+  transform: translateY(-1px);
+  background: color-mix(in srgb, var(--theme-switch-fg) 10%, var(--theme-switch-bg));
+}
+
 @media (max-width: 640px) {
   .bhSettingsWrapper {
     left: 12px;
@@ -900,6 +942,14 @@ html[data-theme="light"] .liquidDropGlass {
   .themeSwitchWrapper {
     left: calc(12px + var(--site-bh-control-size) + var(--site-controls-gap));
     right: auto;
+    top: var(--site-left-controls-top);
+    bottom: auto;
+    height: var(--site-bh-control-size);
+  }
+
+  .socialLinksWrapper {
+    right: 12px;
+    left: auto;
     top: var(--site-left-controls-top);
     bottom: auto;
     height: var(--site-bh-control-size);

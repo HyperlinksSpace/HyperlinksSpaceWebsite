@@ -9,6 +9,7 @@ import ExternalLink from "./components/ExternalLink";
 import LanguageSwitcher from "./components/LanguageSwitcher";
 import ThemeSwitcher from "./components/ThemeSwitcher";
 import SiteSettings from "./components/SiteSettings";
+import SocialLinks from "./components/SocialLinks";
 import LogoOverlay from "./components/LogoOverlay";
 import StrategyOverlay from "./components/StrategyOverlay";
 import { LanguageProvider } from "./components/LanguageContext";
@@ -189,6 +190,7 @@ export default function RootLayout({
         </div>
           <SiteSettings />
           <ThemeSwitcher />
+          <SocialLinks />
           <LanguageSwitcher />
           {children}
           <Analytics />

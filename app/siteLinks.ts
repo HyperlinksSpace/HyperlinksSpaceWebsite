@@ -7,6 +7,16 @@ export const SITE_LINKS = {
     "https://aaa.band/",
     "https://www.desde.io/",
   ],
+  social: {
+    github: {
+      href: "https://github.com/HyperlinksSpace",
+      ariaLabel: "Open HyperlinksSpace on GitHub",
+    },
+    telegram: {
+      href: "https://t.me/anriltine",
+      ariaLabel: "Open Hyperlinks.Space on Telegram",
+    },
+  },
   overlays: {
     strategy: {
       href: "https://ctrategy.hyperlinks.space/",
